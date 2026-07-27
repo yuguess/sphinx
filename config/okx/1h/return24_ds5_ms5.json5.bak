@@ -1,0 +1,98 @@
+{
+    // okx 1h 冠军配置:use_vola=true + 5项loss(4基础+MeanShift,无 global_label_corr) + ds5/10ep/γ0.8。
+    // val scorexy 2.85,对 cta2 复现版全 blend val+test 占优;分解与 holdout 校准见
+    // docs/superpowers/notes/2026-07-02-okx1h-corr-sharpe-bucket-ensemble.md
+    output_dir: "output/return24_ds5_ms5",
+    description: "okx 1h return24 冠军: use_vola=true + 5项loss(含MeanShift无glc) + ds5 10ep γ0.8 + PREV=5干净数据",
+    dataset: {
+        name: "FeatureBase",
+        label_name: ["return24m"],
+        use_vola: true,    // vola 归一化建模、监督 novola 空间(单变量实测 +0.28)
+        sub_label_name: null,
+        alphas: [
+            "ret1m", "ret10m", "ret40m", "ret80m", "ret160m",
+            "twret1m", "twret10m", "twret40m", "twret80m", "twret160m",
+            "twdiff_r1", "twdiff_r10", "twdiff_r40", "twdiff_r80", "twdiff_r160",
+            "twdiff_r1_r10", "twdiff_r1_r40", "twdiff_r1_r80", "twdiff_r1_r160",
+            "twdiff_r10_r40", "twdiff_r10_r80", "twdiff_r10_r160",
+            "twdiff_r40_r80", "twdiff_r40_r160", "twdiff_r80_r160",
+            "norm_ret1m_r40", "norm_ret1m_r80", "norm_ret1m_r160",
+            "imbhl_r10", "imbhl_r40", "imbhl_r80", "imbhl_r160",
+            "hldiff_r10", "hldiff_r40", "hldiff_r80", "hldiff_r160",
+        ],
+        seq_len: 1024,
+        valid_thr: 0.7,
+    },
+    train_dataset: {
+        universe: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+        start_date: "2020-07-14",
+        end_date: "2024-12-31",
+        downsample: 5,           // 对齐 cta2 日程:分解实验只留 loss 单变量
+        flip_prob: 0.0,
+        sample_weight_decay_coef: 0.95,
+        jump_step: 1,
+        mode: "train",
+    },
+    val_dataset: {
+        universe: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+        start_date: "2025-01-01",
+        end_date: "2025-12-31",
+        downsample: 1,
+        mode: "val",
+    },
+    test_dataset: {
+        universe: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+        start_date: "2026-01-01",
+        end_date: "2026-05-31",  // infer 到数据最新;eval 内部切 test(~05-12)+holdout(05-13~31)
+        downsample: 1,
+        mode: "val",
+    },
+    data_loader: { batch_size: 8, num_workers: 2, pin_memory: true },
+    train_loader: { shuffle: false, drop_last: true },
+    val_loader: { shuffle: false, drop_last: false },
+    model: {
+        name: "WideDeepGATProb",
+        receptive_field: 505,
+        in_channels: 36,
+        mid_channels: 24,
+        out_channels: 1,
+        wide_gradient_ckpt: false,
+        deep_gradient_ckpt: true,
+        wide_params: [
+            { kernel_size: 3, dilation_size: [1] },
+            { kernel_size: 5, dilation_size: [1] },
+            { kernel_size: 7, dilation_size: [1] },
+        ],
+        deep_params: {
+            params: {
+                layers: 1,
+                rnn_type: "gru",
+                mhsa_params: { num_heads: 2, qkv_bias: true, drop: 0.1, drop_path: 0.3, attn_drop: 0.1, sr_ratio: 16 },
+                graph_params: { num_heads: 2, qkv_bias: true, drop: 0.1, drop_path: 0.3, attn_drop: 0.1, adj_num: 2 },
+            },
+        },
+        dropout: 0.7,
+    },
+    loss: {
+        // 5项:MSE-mean + CORR-mean(=global_corr) + CORR-section + BCE + MeanShift,全监督 novola 空间。
+        //   MeanShift 实测 +0.24;global_label_corr 两语境实测 ≤0 已从代码删除。
+        name: "MultipleLoss",
+        params: {
+            loss_list: [
+                { name: "MSELoss",  params: { reduction: "mean", key_prefix: "novola_norm_", channels: [0] }, weight: 0.5 },
+                { name: "CORRLoss", params: { reduction: "mean", key_prefix: "novola_norm_", channels: [0] }, weight: 0.5 },
+                { name: "CORRLoss", params: { reduction: "section", key_prefix: "novola_norm_", dim: 1, channels: [0] }, weight: 0.5 },
+                { name: "BCELoss",       params: { key_prefix: "prob_", weight_type: "label", channels: [0] }, weight: 0.5 },
+                { name: "MeanShiftLoss", params: { reduction: "mean", key_prefix: "novola_norm_", channels: [0] }, weight: 0.5 },
+            ],
+        },
+    },
+    ema: { enabled: true, alpha: 0.99, start_epoch: 0 },
+    optim: {
+        name: "AdamW",
+        params: { lr: 0.00001, weight_decay: 0.05 },
+        lr_scheduler: { step_size: 1, gamma: 0.8 },  // 对齐 cta2
+    },
+    train_epoch: 10,  // 对齐 cta2
+    save_freq: 1,
+}

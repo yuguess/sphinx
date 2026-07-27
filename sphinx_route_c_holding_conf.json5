@@ -1,0 +1,27 @@
+{
+    start_date: "2025-01-01",
+    end_date: "2026-05-30",
+    expected_exchange: "okx",
+    expected_freq: "1h",
+    nav: 1.0,
+    holding_mode: "pct",
+
+    univ_name: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+    alpha_name: ["sphinx_route_c_epoch9fusion"],
+    out_name: "sphinx_route_c_epoch9fusion_holding",
+
+    strategy: {
+        params: {
+            transform: "cs_demean_l1",
+            smoothing: {
+                type: "ewma",
+                alpha: 0.03,
+            },
+            funding_filter: {
+                stage: "before_cs_norm_and_after_final_zero",
+                feature: "funding_1hr_r24h",
+                threshold_bp: 1.0,
+            },
+        },
+    },
+}

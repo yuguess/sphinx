@@ -1,0 +1,14 @@
+{
+    // okx 1h 深度特征 alpha（36 个，ret1m 必须为首，dataset 断言 alphas[0]=="ret1m"）
+    alphas: [
+        "ret1m", "ret10m", "ret40m", "ret80m", "ret160m",
+        "twret1m", "twret10m", "twret40m", "twret80m", "twret160m",
+        "twdiff_r1", "twdiff_r10", "twdiff_r40", "twdiff_r80", "twdiff_r160",
+        "twdiff_r1_r10", "twdiff_r1_r40", "twdiff_r1_r80", "twdiff_r1_r160",
+        "twdiff_r10_r40", "twdiff_r10_r80", "twdiff_r10_r160",
+        "twdiff_r40_r80", "twdiff_r40_r160", "twdiff_r80_r160",
+        "norm_ret1m_r40", "norm_ret1m_r80", "norm_ret1m_r160",
+        "imbhl_r10", "imbhl_r40", "imbhl_r80", "imbhl_r160",
+        "hldiff_r10", "hldiff_r40", "hldiff_r80", "hldiff_r160",
+    ],
+}

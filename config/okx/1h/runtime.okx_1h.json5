@@ -1,0 +1,12 @@
+{
+    EXCHANGE: "okx",
+    FREQ: "1h",
+    MARKET: "crypto",
+    DATA_ROOT: "/data/tmp",
+    DEPLOY_MODE: "dev",
+    USE_MP_CACHE: "1",
+    ENV_FILE: "/home/long/sphinx/okx1h_dcheng.env",
+    PYTHONPATH: [
+        "/home/long/py312venv",
+    ],
+}

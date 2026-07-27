@@ -1,0 +1,26 @@
+{
+    start_date: "2025-01-01",
+    end_date: "2026-05-30",
+    expected_exchange: "okx",
+    nav: 1.0,
+    fee: 0.0004,
+
+    backtest: {
+        ep_holding_mode: "pct",
+        ep_holding_univ_name: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+        ep_holding_key: "sphinx_route_c_epoch9fusion_holding",
+        output_dir: "./route_c_backtest",
+        repair_invalid_bar_holding: true,
+        capacity_violation_tolerance: 0.05,
+        plot: true,
+    },
+
+    strategy: {
+        params: {
+            exec_info: {
+                exec_type: "make",
+                turnover_limit_rate: 1,
+            },
+        },
+    },
+}
