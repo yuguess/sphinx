@@ -1,7 +1,6 @@
 
 import getpass
 import os
-import json5
 import numpy as np
 import pandas as pd
 from functools import lru_cache
@@ -25,10 +24,7 @@ def assert_supported_runtime() -> None:
     market = os.environ.get("MARKET", "")
     if exchange == CF_EXCHANGE and freq != FREQ_5MIN:
         raise ValueError(f"only CF {FREQ_5MIN} is supported, got EXCHANGE={exchange!r} FREQ={freq!r}")
-    require_runtime_config(
-        {"EXCHANGE": exchange, "FREQ": freq, "MARKET": market},
-        error_type=ValueError,
-    )
+    require_runtime_config({"EXCHANGE": exchange, "FREQ": freq, "MARKET": market}, error_type=ValueError)
 
 
 def get_dates(start_date: str, end_date: str) -> list[str]:

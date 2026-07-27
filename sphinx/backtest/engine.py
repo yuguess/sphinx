@@ -323,8 +323,7 @@ def compute_make_costs(
     max_over_pct = over_pct.max().max()
     if max_over_pct > capacity_violation_tolerance:
         timestamp, instrument = over_pct.stack(future_stack=True).idxmax()
-        raise ValueError("capacity violation: "
-                         f"max over pct {max_over_pct:.6g} at {timestamp} {instrument}")
+        raise ValueError(f"capacity violation: max over pct {max_over_pct:.6g} at {timestamp} {instrument}")
 
     limit_qty = (limit_pct * nav / execution.close_price).where(used, 0.0)
     buy_over_qty = (buy_over_pct * nav / execution.close_price).where(buy_over_pct > 0.0, 0.0)
@@ -461,18 +460,10 @@ def write_diagnostics(diagnostics_dir: Path, date: str, flow: BarPositionFlow, c
         "net_pnl": net_pnl,
         "turnover": costs.turnover,
     }
-    stacked = pd.concat(
-        [frame.stack(future_stack=True).rename(name) for name, frame in items.items()],
-        axis=1,
-    ).reset_index()
+    stacked = pd.concat([frame.stack(future_stack=True).rename(name) for name, frame in items.items()], axis=1).reset_index()
     stacked.columns = ["timestamp", "instrument", *items.keys()]
     stacked.insert(0, "date", date)
-    stacked.to_parquet(
-        diagnostics_dir / f"{date}.parquet",
-        index=False,
-        engine="pyarrow",
-        compression="zstd",
-    )
+    stacked.to_parquet(diagnostics_dir / f"{date}.parquet", index=False, engine="pyarrow", compression="zstd")
 
 
 def futures_product_from_contract(column: Any) -> str:
@@ -699,15 +690,7 @@ def run_backtest_clear_from_frames(
         date: str,
         diagnostics_dir: Path | None,
     ) -> tuple[Any, ...]:
-        return (
-            config,
-            chunk_dates,
-            execution_dates,
-            last_requested_date,
-            date,
-            ep_holding_by_date,
-            diagnostics_dir,
-        )
+        return (config, chunk_dates, execution_dates, last_requested_date, date, ep_holding_by_date, diagnostics_dir)
 
     return run_backtest_clear_over_chunks(
         config=config,

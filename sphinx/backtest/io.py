@@ -37,13 +37,7 @@ def read_valid_frame(date: str, columns: pd.Index) -> Frame:
         raise SystemExit(f"only {CF_EXCHANGE}/{OKX_EXCHANGE} valid path is supported, got {exchange!r}")
 
 
-def require_ep_holding_axes_match(
-    ep_holding: Frame,
-    universe: pd.Series,
-    expected_index: pd.Index,
-    date: str,
-    ep_holding_univ_name: str,
-) -> None:
+def require_ep_holding_axes_match(ep_holding: Frame, universe: pd.Series, expected_index: pd.Index, date: str, ep_holding_univ_name: str) -> None:
     """holding 的列和时间轴必须严格等于 universe 和标准 bar index。"""
 
     universe_columns = pd.Index(universe.index)
@@ -132,23 +126,13 @@ def read_ep_holding_and_close_with_history_from_reader(
     if date == dates[0]:
         columns = today_columns
         forced_exit_columns = pd.Index([])
-        close_today = read_close(date, columns).reindex(
-            index=ep_holding_today.index,
-            columns=columns,
-        )
+        close_today = read_close(date, columns).reindex(index=ep_holding_today.index, columns=columns)
+
         # 回测第一天没有更早的本策略仓位。用 0 仓位补一行。
         # 收盘价用当天第一根收盘价，保证第一根价格变化为 0。
         # 这里不要对当天真实收盘价做向后填充，否则会掩盖数据缺失。
-        previous_ep_holding = pd.DataFrame(
-            0.0,
-            columns=columns,
-            index=ep_holding_today.index[:1] - pd.Timedelta("1ns"),
-        )
-        previous_close = pd.DataFrame(
-            [close_today.iloc[0]],
-            columns=columns,
-            index=previous_ep_holding.index,
-        )
+        previous_ep_holding = pd.DataFrame(0.0, columns=columns, index=ep_holding_today.index[:1] - pd.Timedelta("1ns"))
+        previous_close = pd.DataFrame([close_today.iloc[0]], columns=columns, index=previous_ep_holding.index)
     elif date != dates[0]:
         # 这里必须用已选交易日列表的前一天，不能用自然日。
         # 否则周一会去读周日文件，触发 KeyError。
@@ -179,11 +163,7 @@ def read_ep_holding_and_close_with_history_from_reader(
             except KeyError:
                 close_today.loc[:, column] = float(previous_close_last.loc[column])
         close_today = close_today.reindex(index=ep_holding_today.index, columns=columns)
-        previous_close = pd.DataFrame(
-            [previous_close_last.to_numpy()],
-            index=previous_ep_holding.index,
-            columns=columns,
-        )
+        previous_close = pd.DataFrame([previous_close_last.to_numpy()], index=previous_ep_holding.index, columns=columns)
 
     ep_holding = pd.concat([previous_ep_holding, ep_holding_today], axis=0)
     require_no_nan(ep_holding, f"ep_holding with history {date}")
@@ -192,12 +172,8 @@ def read_ep_holding_and_close_with_history_from_reader(
 
 
 def read_market_frame_zeroing_columns(
-    date: str,
-    columns: pd.Index,
-    data_name: str,
-    index: pd.Index | None = None,
-    zero_columns: pd.Index | None = None,
-) -> Frame:
+    date: str, columns: pd.Index, data_name: str, index: pd.Index | None = None, zero_columns: pd.Index | None = None) -> Frame:
+
     """读取 market frame，并把指定列补 0 且不访问这些列的数据源。"""
 
     zero_columns = zero_columns if zero_columns is not None else pd.Index([])

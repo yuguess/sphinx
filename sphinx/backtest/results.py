@@ -6,7 +6,6 @@ from typing import Any
 from pathlib import Path
 import datetime as dt
 
-
 from .config import annual_periods_for_exchange
 
 
@@ -47,7 +46,6 @@ def drawdown_from_equity(equity: pd.Series) -> pd.Series:
 
 def scaled_instrument_daily_pnl(dates: list[str], pnl_list: list[Frame]) -> pd.Series:
     """按日期和品种展开，并把单品种贡献还原到当天 universe 尺度。"""
-
     series_list: list[pd.Series] = []
     for date, pnl in zip(dates, pnl_list, strict=True):
         daily_inst_pnl = pnl.sum(axis=0) * len(pnl.columns)
