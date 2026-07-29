@@ -1221,11 +1221,8 @@ def _resolve_feature_date(data_source: Any, task_time: str) -> str:
     return pd.Timestamp(task_time).strftime("%Y-%m-%d")
 
 
-def _history_tail_window_for_target(
-    feature_window: FeatureWindow,
-    feature_plan: FeaturePlan,
-    target_time: pd.Timestamp,
-) -> FeatureWindow:
+def _history_tail_window_for_target(feature_window: FeatureWindow, feature_plan: FeaturePlan, target_time: pd.Timestamp) -> FeatureWindow:
+
     history_len = feature_plan.seq_len - 1
     if history_len < 1:
         raise ValueError(f"seq_len must be at least 2 for prewarm, got {feature_plan.seq_len}")
@@ -1985,10 +1982,7 @@ def run_once(args: argparse.Namespace, loop_state: LoopState | None = None, runt
             print(f"HEARTBEAT duplicate selected_time={signal.index[0]}; no audit write", flush=True)
             return None
         if is_duplicate:
-            print(
-                f"HEARTBEAT duplicate selected_time={signal.index[0]}; debug replay enabled; audit write will run",
-                flush=True,
-            )
+            print(f"HEARTBEAT duplicate selected_time={signal.index[0]}; debug replay enabled; audit write will run", flush=True)
         write_result = writer.write(
             date=date, universe_name=args.universe, signal_key=args.signal_key, signal=signal, versions=[info.version for info in infos],
             feature_plan=feature_plan, task_time=task_time, extra={"fake_signal": True, "reason": "explicit --fake-signal mode"}

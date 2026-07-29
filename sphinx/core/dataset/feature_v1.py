@@ -3,7 +3,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import torch
-from IPython import embed
+# from IPython import embed
 from torch.utils.data import Dataset
 from multiprocessing import Pool
 
@@ -391,7 +391,8 @@ class FeatureBase(Dataset):
             if self.mode == "train":
                 return self.__getitem__((org_idx + self.sample_per_date_val) % len(self))
             elif debug:
-                embed()
+                pass
+                # embed()
             else:
                 raise ValueError(f"invalid sample at {self.dates[date_idx_ed]}, idx: {org_idx}, time: {item_index_st}")
 

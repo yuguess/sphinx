@@ -3,6 +3,9 @@ output
 tmp_dataset
 route_c_backtest
 
+output_deploy
+data
+
 .cache/
 .vscode
 __pycache__
