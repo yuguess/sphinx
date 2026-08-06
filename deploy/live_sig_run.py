@@ -389,7 +389,9 @@ class SDKSignalWriter:
         except Exception as exc:
             self._close_context(context_date)
             raise LiveDataUnavailable(f"cannot read signal SHM context for {context_date}: {exc}") from exc
+        
         series = self._series_for_context(signal, universe)
+        
         try:
             self._require_complete_signal_prefix(ctx, i)
             ctx.write_signal(i, series)
@@ -862,9 +864,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fake-signal", action="store_true", help="write an explicit fake zero signal audit; never DB")
     parser.add_argument("--fake-universe-file", default=None)
     parser.add_argument(
-        "--debug-replay-duplicates",
-        action="store_true",
-        help="dry-run loop helper: write repeated local audits for the same selected_time",
+        "--debug-replay-duplicates", action="store_true", help="dry-run loop helper: write repeated local audits for the same selected_time"
     )
     parser.add_argument("--inspect-report", default=None)
     return parser.parse_args()
@@ -2044,10 +2044,7 @@ def run_once(args: argparse.Namespace, loop_state: LoopState | None = None, runt
     else:
         feature_window = load_feature_window(
             data_source, task_time, feature_plan, dump_dir=getattr(args, "dump_feature_frames", None),
-            dump_metadata={
-                "signal_key": args.signal_key,
-                "universe": args.universe,
-            },
+            dump_metadata={"signal_key": args.signal_key, "universe": args.universe},
             exact_task_time=True,
             wait_timeout_seconds=getattr(args, "wait_timeout_seconds", None),
             wait_poll_seconds=getattr(args, "wait_poll_seconds", 1.0),
@@ -2172,13 +2169,13 @@ def main():
             retry_after_failure = True
             if args.once:
                 raise SystemExit(2)
+
         if args.once:
             return
         time.sleep(
             loop_sleep_seconds(
                 args, retry_after_failure=retry_after_failure,
-                last_written_selected_time=(loop_state.last_written_selected_time if loop_state is not None else None))
-        )
+                last_written_selected_time=(loop_state.last_written_selected_time if loop_state is not None else None)))
 
 if __name__ == "__main__":
     main()
