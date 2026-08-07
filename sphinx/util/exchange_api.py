@@ -39,12 +39,12 @@ def get_dates(start_date: str, end_date: str) -> list[str]:
         raise ValueError(f"unsupported runtime EXCHANGE={exchange!r}")
 
 
-def get_index(date: str) -> pd.DatetimeIndex:
+def get_index(date: str) -> pd.Index:
     """读取当前交易日当前频率的 bar index。"""
     exchange = get_env_exchange()
     freq = get_env_freq()
     if exchange == CF_EXCHANGE:
-        return db.read(date, f"{current_freq()}/source/kline/close").index
+        return db.read(date, f"{get_env_freq()}/source/kline/close").index
     elif exchange == OKX_EXCHANGE:
         if freq == FREQ_5MIN:
             return metadata.index(date)
@@ -179,12 +179,6 @@ def prev_date(date: str) -> str:
     return prev_date_value
 
 
-def write_signal(date: str, univ_name: str, signal_key: str, signal: pd.DataFrame) -> None:
-    """写入 DB signal 宽表。"""
-    freq = get_env_freq()
-    db.write(date, f"{freq}/signal/{univ_name}/{signal_key}", signal, is_cross_section=True)
-
-
 def read_signal(date: str, univ_name: str, signal_name: str) -> pd.DataFrame:
     freq = get_env_freq()
     key = f"{freq}/signal/{univ_name}/{signal_name}"
@@ -198,6 +192,12 @@ def read_holding(date: str, univ_name: str, holding_key: str) -> pd.DataFrame:
 
 def write_holding(date: str, univ_name: str, holding_key: str, holding: pd.DataFrame) -> None:
     db.write(date, f"{get_env_freq()}/holding/{univ_name}/{holding_key}", holding, is_cross_section=True)
+
+
+# def write_signal(date: str, univ_name: str, signal_key: str, signal: pd.DataFrame) -> None:
+#     """写入 DB signal 宽表。"""
+#     freq = get_env_freq()
+#     db.write(date, f"{freq}/signal/{univ_name}/{signal_key}", signal, is_cross_section=True)
 
 
 def write_signal(date: str, univ_name: str, signal_key: str, signal: pd.DataFrame) -> None:
@@ -296,3 +296,45 @@ def read_fee_rates(date: str, columns: pd.Index, fee_cache: str | Path | None = 
     if fee_cache:
         return read_fee_rates_from_cache(Path(fee_cache), date, columns)
     return pd.Series({inst: read_fee_rate(date, str(inst)) for inst in columns})
+
+
+## add for legacy bn 5min
+
+from mona import sdk_offline
+
+def read_fee(date, insts) -> pd.Series:
+    exchange = get_env_exchange()
+    assert exchange in ["CF", "CF10s", "CF5m"]
+    # return pd.Series([sdk_offline.read_fee_closehistory("CF", inst, date) for inst in insts], index=insts)
+    return pd.Series([sdk_offline.read_fee("CF", inst, date) for inst in insts], index=insts)
+
+
+def read_basedata(date, inst) -> pd.DataFrame:
+    exchange = get_env_exchange()
+    return sdk_offline.read_basedata(exchange, date, inst)    
+    # return template(
+    #     {
+    #         # "binance": crypto_v1.read_basedata,
+    #         "other": sdk_offline.read_basedata,
+    #         # "bybit": sdk_offline.read_basedata,
+    #         # "CF": sdk_offline.read_basedata,
+    #         # "coinbase": sdk_offline.read_basedata,
+    #     },
+    #     date,
+    #     inst,
+    # )
+
+def read_orderbook(date, inst) -> pd.DataFrame:
+    exchange = get_env_exchange()
+    return sdk_offline.read_orderbook(exchange, date, inst)
+    # return template(
+    #     {
+    #         # "binance": crypto_v1.read_orderbook,
+    #         "other": ,
+    #         # "bybit": sdk_offline.read_orderbook,
+    #         # "CF": sdk_offline.read_orderbook,
+    #         # "coinbase": sdk_offline.read_orderbook,
+    #     },
+    #     date,
+    #     inst,
+    # )
