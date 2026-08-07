@@ -195,7 +195,6 @@ class SDKWrapper:
 
     def _is_trading_time(self, ts: float, index_ts: pd.Index) -> bool:
         i = np.searchsorted(index_ts, ts, side='left')
-        assert isinstance(i, int)
         
         if i >= len(index_ts):
             return False  # after last index (including last index)
@@ -336,6 +335,12 @@ class SDKWrapper:
         else:
             raise NotImplementedError
         return fund.eq
+    
+    def close(self):
+        for ectx in self._ectxs.values():
+            ectx.close()
+        self._ctx.close()
+
 
 
 class Account:
