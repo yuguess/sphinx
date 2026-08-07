@@ -326,6 +326,16 @@ class SDKWrapper:
             return pd.Series(self._ctx.feature_dfs[f'feature/{alpha}'].iloc[-self._ctx.daylen + start_i:-self._ctx.daylen + end_i + 1][inst].values)
         else:
             raise NotImplementedError
+        
+    def deploy_read_equity(self, account: str) -> float:
+        if EXCHANGE in ["CF", "CF5m"]:
+            raise NotImplementedError("CF exchange not supported for read_equity")
+            # fund = self._ectxs[account].get_adjusted_fund()
+        elif EXCHANGE in ["okx5m", "okx10m", "binance5m"]:
+            fund = self._ectxs[account].get_fund()
+        else:
+            raise NotImplementedError
+        return fund.eq
 
 
 class Account:
@@ -532,7 +542,7 @@ def do_minute_infer(task_time_str, cfg, universe, model_name, model_id, engles_c
             for name in inst_feature_name:
                 f.append(engles_cli.deploy_read_history_alpha(task_time_str, inst, name).rename(name))
             history_inst_self_feature_list.append(pd.concat(f, axis=1))
-            
+
         if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
             history_market_feature = [engles_cli.deploy_read_history_alpha(task_time_str, market, "ret1m").rename(f"{market}_ret1m") for market in market_list]
             history_market_feature += [engles_cli.deploy_read_history_alpha(task_time_str, market_list[0], alpha).rename(f"{market_list[0]}_{alpha}") for alpha in market_feature_name]
@@ -542,14 +552,16 @@ def do_minute_infer(task_time_str, cfg, universe, model_name, model_id, engles_c
             history_inst_feature_list = []
             for inst_feature in history_inst_self_feature_list:
                 history_inst_feature_list.append(pd.concat([inst_feature, history_market_feature], axis=1)[all_feature_name_list].values.T)
+        else:
+            raise NotImplementedError("CF exchange not supported")
+            
+        history_inst_feature = np.array(history_inst_feature_list)  # B = 20, C = 18, T = 1439
+        history_inst_ret1m = history_inst_feature[:, 0:1, :]  # 第一个 feature 必须是 ret1m！
+        history_inst_ret1m = history_inst_ret1m[..., -(model.seq_len - 1):]
 
-            history_inst_feature = np.array(history_inst_feature_list)  # B = 20, C = 18, T = 1439
-            history_inst_ret1m = history_inst_feature[:, 0:1, :]  # 第一个 feature 必须是 ret1m！
-            history_inst_ret1m = history_inst_ret1m[..., -(model.seq_len - 1):]
-
-            norm_history_inst_feature = (history_inst_feature / normalizer["feature"].std[None, :, None]).clip(-normalizer["feature"].clip, normalizer["feature"].clip)
-            norm_history_inst_feature = norm_history_inst_feature[..., -(model.seq_len - 1):]
-            print(f"[{model_id}] to read history cost {(time.time() - st_time)*1e3:.2f}ms")
+        norm_history_inst_feature = (history_inst_feature / normalizer["feature"].std[None, :, None]).clip(-normalizer["feature"].clip, normalizer["feature"].clip)
+        norm_history_inst_feature = norm_history_inst_feature[..., -(model.seq_len - 1):]
+        print(f"[{model_id}] to read history cost {(time.time() - st_time)*1e3:.2f}ms")
 
         if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
             valid = pd.concat([engles_cli.deploy_read_history_alpha(task_time_str, inst, "ret1m").notna().rename("valid") for inst in universe], axis=1).values
@@ -598,20 +610,16 @@ def do_minute_infer(task_time_str, cfg, universe, model_name, model_id, engles_c
                 f.append(engles_cli.deploy_read_last_alpha(task_time_str, inst, name).rename(name))
             last_inst_self_feature_list.append(pd.concat(f, axis=1))
 
+        last_inst_feature = []
         if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
             last_market_feature = [engles_cli.deploy_read_last_alpha(task_time_str, market, "ret1m").rename(f"{market}_ret1m") for market in market_list]
             last_market_feature += [engles_cli.deploy_read_last_alpha(task_time_str, market_list[0], alpha).rename(f"{market_list[0]}_{alpha}") for alpha in market_feature_name]
             last_market_feature = pd.concat(last_market_feature, axis=1)
             last_index = last_market_feature.index
 
-        last_inst_feature = []
-        for inst_feature in last_inst_self_feature_list:
-            if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
+            for inst_feature in last_inst_self_feature_list:
                 last_inst_feature.append(pd.concat([inst_feature, last_market_feature], axis=1)[all_feature_name_list].values.T)
-            elif EXCHANGE in ["CF5m"]:
-                last_inst_feature.append(pd.concat([inst_feature], axis=1)[all_feature_name_list].values.T)
-            else:
-                raise ValueError(f"Unknown exchange: {EXCHANGE}")
+
         last_inst_feature = np.array(last_inst_feature)  # B = 20, C = 18, T = 1
         last_inst_ret1m = last_inst_feature[:, 0:1, :]  # 第一个 feature 必须是 ret1m！
         norm_last_inst_feature = (last_inst_feature / normalizer["feature"].std[None, :, None]).clip(-normalizer["feature"].clip, normalizer["feature"].clip)
@@ -1010,7 +1018,7 @@ if __name__ == '__main__':
                         # real_qty_holding = pd.Series(exchange_api.query_position())
                         # info.loc["real_qty_holding"] = real_qty_holding.reindex(info.columns).fillna(0)
                         # info.loc["real_equity"] = exchange_api.query_account_information().margin_balance
-                        info.loc["real_equity"] = deploy_read_equity(engles_cli, account.account_name)
+                        info.loc["real_equity"] = engles_cli.deploy_read_equity(account.account_name)
                         for i, h in enumerate(account.hist_row):
                             info.loc[f"holding_stage{i}(%)"] = h.mul(100)
                         info = info.round(3)
