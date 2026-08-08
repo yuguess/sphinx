@@ -2,11 +2,14 @@ import os
 import math
 import json5
 import time
+import sys
+import pathlib
 import psutil
 import traceback
 import pandas as pd
 import numpy as np
 import torch
+import mosek
 from datetime import datetime
 from argparse import ArgumentParser
 from multiprocessing import Pool
@@ -15,13 +18,17 @@ from typing import Optional
 from mona.common import metadata, INDEX_INTERVAL, db
 from mona.common.util import dbtool
 from mona import sdk
+from mona.common.logging import get_logger
 
 from sphinx.core.model import gen_model
 from sphinx.deprecated.main2 import GenPortfolio
 
 
+LOGGER = get_logger('backup_bn_5min')
 EXCHANGE = os.environ["EXCHANGE"]
 assert EXCHANGE in ["CF5m", "okx10m", "binance5m", "okx5m"], f"Unknown exchange: {EXCHANGE}"
+
+global ENGLES_CLI_GLOBAL_HOLDER
 
 def dump_log(*args):
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -86,9 +93,6 @@ def assert_mdl_conf(cfg) -> int:
 
     model_num = len(os.listdir(cfg["model"]["path"]))
 
-    # 不会自动从 deploy 里读最新仓位，以 0 开始
-    # account_list = [Account(c, args.config, args.prev_data_csv_path) for c in cfg["account"]]
-    account_list = None
     if EXCHANGE in ["okx10m", "binance5m", "okx5m", "CF5m"]:
         assert model_num == 8
     elif EXCHANGE == "CF":
@@ -103,7 +107,7 @@ def assert_mdl_conf(cfg) -> int:
 def check_print_file_handles():
     current_process = psutil.Process()
     file_handles = current_process.open_files()
-    print(f"普通文件句柄数量: {len(file_handles)}")
+    LOGGER.info(f"debug, 普通文件句柄数量: {len(file_handles)}")
     # 查看具体文件路径
     # for handle in file_handles:
     #     print(f"FD: {handle.fd}, Path: {handle.path}")
@@ -182,7 +186,7 @@ class SDKWrapper:
     
     def _find_index(self, ts: float) -> int:
         i = np.searchsorted(self._full_index_ts, ts, side='right')
-        assert isinstance(i, int) and i > 0
+        assert i > 0
         # return i - 2
         return i - 1
     
@@ -342,20 +346,17 @@ class SDKWrapper:
         self._ctx.close()
 
 
-
 class Account:
 
     def __init__(self, cfg, parent_cfg_path, hist_row_csv_path, cli: SDKWrapper):
         self.account_name = cfg["name"]
         self.strategy_cfg = cfg["strategy"]
         self.stage = len(cfg["strategy"]["max_beta_exposure"])
-        self.engles_cli = cli
         
         if hist_row_csv_path is None:
             self.hist_row = [pd.Series(np.nan) for _ in range(self.stage)]
         elif hist_row_csv_path == "deploy":
-            self.hist_row = [self.engles_cli.deploy_read_last_holding(self.account_name) / self.stage for _ in range(self.stage)]
-
+            self.hist_row = [cli.deploy_read_last_holding(self.account_name) / self.stage for _ in range(self.stage)]
         elif hist_row_csv_path == "last":
             last_path_prefix = f"deploy/data/{self.account_name}"
             last_path_dir = sorted(os.listdir(last_path_prefix))[-1]
@@ -369,6 +370,7 @@ class Account:
             df = pd.read_csv(hist_row_csv_path, index_col=0)
             self.hist_row = [df.loc[f"holding_stage{i}(%)"] / 100 for i in range(self.stage)]
             assert f"holding_stage{self.stage}(%)" not in df.index
+
         self.deploy_last_row = pd.Series(np.nan)
         self.fusion_row = [pd.Series(np.nan) for _ in range(self.stage)]
         self.nav = -1
@@ -382,8 +384,8 @@ class Account:
         self.deploy_last_row = pd.Series(np.nan)
         self.fusion_row = [pd.Series(np.nan) for _ in range(self.stage)]
 
-    def try_reset(self, task_date):
-        curr_nav = self.engles_cli.deploy_read_nav(self.account_name)
+    def try_reset(self, task_date, engles_cli: SDKWrapper):
+        curr_nav = engles_cli.deploy_read_nav(self.account_name)
         
         if EXCHANGE in ["CF", "CF5m"]:
             slip_time = "20:01"
@@ -391,6 +393,7 @@ class Account:
             slip_time = "08:01"
         else:
             raise ValueError("unknown exchange")
+
         if curr_nav != self.nav or self.curr_date != task_date:
             # if curr_nav != self.nav:
             #     self.reset_holding()
@@ -429,7 +432,10 @@ def decode_pred(pred, curr_ret1m, ewm_alpha, ewm_mean, ewm_var, label_std, valid
     return pred, ewm_mean, ewm_var
 
 
-def do_minute_infer(task_time_str, cfg, universe, model_name, model_id, engles_cli: SDKWrapper):
+def do_minute_infer(task_time_str, cfg, universe, model_name, model_id):
+    
+    engles_cli: SDKWrapper = ENGLES_CLI_GLOBAL_HOLDER
+    
     try:
         st_time = time.time()
         
@@ -642,15 +648,7 @@ def do_minute_infer(task_time_str, cfg, universe, model_name, model_id, engles_c
         last_probs = []
         for c in range(channel):
             last_pred, last_ewm_mean, last_ewm_var = decode_pred(
-                last_encode_pred[:, c],
-                last_inst_ret1m,
-                ewm_alpha[c],
-                ewm_mean[c],
-                ewm_var[c],
-                normalizer["label"].std[c:c + 1],
-                last_valid,
-                use_vola,
-            )
+                last_encode_pred[:, c], last_inst_ret1m, ewm_alpha[c], ewm_mean[c], ewm_var[c], normalizer["label"].std[c:c + 1], last_valid, use_vola)
             last_preds.append(last_pred)
             last_prob = last_encode_prob[:, c] * 2 - 1
             last_probs.append(last_prob)
@@ -767,12 +765,39 @@ def do_minute_opt(
         return None
 
 
+def add_model_legacy_path():
+    patch_path = pathlib.Path(__file__).parent
+    sys.path.append(str(patch_path))
+    LOGGER.info(f"add {patch_path} to syspath")
+
+
+def check_load_model(cfg):
+    model_name = 'model'
+    checkpoints = sorted(os.listdir(cfg[model_name]["path"]))
+    for model_dir_p in checkpoints:
+        mdl_path = os.path.join(cfg[model_name]["path"], model_dir_p, f"{cfg[model_name]['epoch']}.pth.tar")
+        res = torch.load(mdl_path, map_location="cpu", weights_only=False)
+        LOGGER.info(f"load checkpoint :{mdl_path}")
+
+
+def check_load_mosek_license():
+    os.environ["MOSEKLM_LICENSE_FILE"] = "mosek.lic"
+    env = mosek.Env()
+    # env.putlicensedebug(1)
+    # env.checkoutlicense(mosek.feature.ptopt)
+    version = env.getversion()
+    LOGGER.info(f"moseck license loaded, version:{version}")
+
+
 if __name__ == '__main__':
     args = parse_args()
     with open(args.config, "r") as f:
         cfg = json5.load(f)
 
+    add_model_legacy_path()
     model_num = assert_mdl_conf(cfg)
+    check_load_model(cfg)
+    check_load_mosek_license()
 
     IS_TEST = args.is_test
 
@@ -791,10 +816,12 @@ if __name__ == '__main__':
         #         deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
         #         current_time = time.localtime(time.mktime(current_time) + 60)
     else:
-
+        account_list = []
+        
         while True:
             current_time = time.localtime()
             current_date = time.strftime("%Y-%m-%d", current_time)
+
             if current_time.tm_sec >= 5:
 
                 check_print_file_handles()
@@ -811,24 +838,26 @@ if __name__ == '__main__':
                 # SDK_WRAPPER = SDKWrapper(date=trade_date, accounts=[a['name'] for a in cfg['account']], net_mode=False, univ_name=cfg["universe"])
                 # SDK_WRAPPER = SDKWrapper(date=trade_date, net_mode=False, univ_name=cfg["universe"])
                 engles_cli = SDKWrapper(date=trade_date, accounts=[cfg['account'][0]['name']], net_mode=False, univ_name=cfg["universe"])
-                account_list = [Account(c, args.config, args.prev_data_csv_path, engles_cli) for c in cfg["account"]]
+                ENGLES_CLI_GLOBAL_HOLDER = engles_cli
+                if not account_list:
+                    account_list = [Account(c, args.config, args.prev_data_csv_path, engles_cli) for c in cfg["account"]]
                 
                 # print(f"task begin time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))}.{int((t - int(t)) * 1e3):03d}")
                 try:
                     for account in account_list:
-                        account.try_reset(trade_date)
+                        account.try_reset(trade_date, engles_cli)
+
                     if not engles_cli.is_trading_time(task_time_str):
-                        print(f"[{task_time_str}] not trading time, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+                        LOGGER.info(f"[{task_time_str}] not trading time, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                         time.sleep(30 - (time.localtime().tm_sec) % 30 + 5)
                         continue
 
-                    # if cfg["universe"].endswith("_2d"):
-                    #     raise ValueError("universe configured should not end with _2d")
                     universe = engles_cli.deploy_read_universe(cfg["universe"])  # T30R20
                     if EXCHANGE in ['CF', 'CF5m']:
                         universe_2d = engles_cli.deploy_read_universe('all')  # all
                     else:
                         universe_2d = engles_cli.deploy_read_universe(f'{cfg["universe"]}_2d')  # 2d
+                        
                     # engles_cli.deploy_write_holding(task_time_str, pd.Series(0.0, index=universe)) # 紧急平仓打开这个
                     # exit(0) # 紧急平仓打开这个
 
@@ -839,10 +868,11 @@ if __name__ == '__main__':
                     for model_id in range(model_num):
                         task_list.append((task_time_str, cfg, universe, 'model', model_id))
                     # do_minute_infer(task_time_str, cfg, universe, "model", 0)
-                    # embed()
                     with Pool(model_num) as p:
                         ret = p.starmap(do_minute_infer, task_list)
-                    print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), "model done")
+                        
+                    LOGGER.info("model inference done")
+                    
                     fusion_preds = [sum([r[0][i] for r in ret]) / model_num for i in range(len(ret[0][0]))]
                     fusion_prob_preds = [sum([r[1][i] for r in ret]) / model_num for i in range(len(ret[0][1]))]
                     
@@ -855,6 +885,7 @@ if __name__ == '__main__':
                     half_spread_mean = None
                     book1_value_sum0 = None
                     book1_value_sum1 = None
+
                     if EXCHANGE in ["okx", "okx10m", "binance5m", "okx5m"]:
                         fee = pd.Series(cfg["account"][0]["strategy"]["fee"], index=universe).values
                     elif EXCHANGE in ["CF5m"]:
@@ -926,7 +957,8 @@ if __name__ == '__main__':
 
                         for l in account.hist_row:
                             account.valid_insts[l[l.abs() > 1e-6].index] = 1
-                        # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), "opt begin")
+                            
+                        LOGGER.info("opt begin")
                         account.fusion_row = do_minute_opt(
                             cfg=account.strategy_cfg, last_row=account.hist_row,
                             # signals=fusion_preds,
@@ -947,13 +979,16 @@ if __name__ == '__main__':
                             [sum(account.fusion_row).values, np.zeros_like(account.fusion_row[0]), last_inst_close_price],
                             index=["holding", "ty", "close_price"], columns=account.fusion_row[0].index).T
                         
-                        engles_cli.deploy_write_holding(task_time_str, fusion_row_df)
+                        LOGGER.info(f"debug fusion_row:{task_time_str},\n{fusion_row_df}")
                         
-                        # write close holding
-                        close_symbols = sorted(set(universe_2d) - set(universe))
-                        if len(close_symbols) > 0:
-                            close_holding = pd.Series(0.0, index=close_symbols).to_frame(name='holding')
-                            engles_cli.deploy_write_holding(task_time_str, close_holding)
+                        # engles_cli.deploy_write_holding(task_time_str, fusion_row_df)
+                        
+                        # # write close holding
+                        # close_symbols = sorted(set(universe_2d) - set(universe))
+                        # if len(close_symbols) > 0:
+                        #     close_holding = pd.Series(0.0, index=close_symbols).to_frame(name='holding')
+                        #     engles_cli.deploy_write_holding(task_time_str, close_holding)
+                            
                         account.hist_row = account.fusion_row
 
                     t = time.time()
@@ -1034,17 +1069,19 @@ if __name__ == '__main__':
                             pass
                         else:
                             raise ValueError("unknown exchange")
-                        print(tmp.round(3))
-                        print(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
-                        print(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
+
+                        LOGGER.info(f"\n{tmp.round(3)}")
+                        LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
+                        LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
                         info.to_csv(f"deploy/data/{account.run_name}/{task_time_str}.csv")
 
                     # for account in account_list:
                     #     os.system(f"python deploy/show_pnl.py '{account.run_name}'")
-                    print(task_time_str, "done")
+                    LOGGER.info(f"{task_time_str}, done")
+                    
                     t = time.time()
                     task_end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
-                    print(f"write time: {write_time_str}, end time: {task_end_time_str}")
+                    LOGGER.info(f"write time: {write_time_str}, end time: {task_end_time_str}")
 
                 except Exception as e:
                     # engles_cli.deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
