@@ -22,6 +22,7 @@ from mona.common.logging import get_logger
 
 from sphinx.core.model import gen_model
 from sphinx.deprecated.main2 import GenPortfolio
+from .run_helper import parse_args, dump_log, check_load_mosek_license
 
 
 LOGGER = get_logger('backup_bn_5min')
@@ -29,20 +30,6 @@ EXCHANGE = os.environ["EXCHANGE"]
 assert EXCHANGE in ["CF5m", "okx10m", "binance5m", "okx5m"], f"Unknown exchange: {EXCHANGE}"
 
 global ENGLES_CLI_GLOBAL_HOLDER
-
-def dump_log(*args):
-    t = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-    with open(f"error_{t}.txt", "w") as f:
-        print(*args)
-        print(*args, file=f)
-
-
-def parse_args():
-    parser = ArgumentParser(description='infer')
-    parser.add_argument('config', type=str)
-    parser.add_argument('-p', '--prev_data_csv_path', type=str, default=None)
-    parser.add_argument('--is_test', action='store_true')
-    return parser.parse_args()
 
 
 def get_trade_date(time_str: str) -> Optional[str]:
@@ -776,17 +763,8 @@ def check_load_model(cfg):
     checkpoints = sorted(os.listdir(cfg[model_name]["path"]))
     for model_dir_p in checkpoints:
         mdl_path = os.path.join(cfg[model_name]["path"], model_dir_p, f"{cfg[model_name]['epoch']}.pth.tar")
-        res = torch.load(mdl_path, map_location="cpu", weights_only=False)
+        torch.load(mdl_path, map_location="cpu", weights_only=False)
         LOGGER.info(f"load checkpoint :{mdl_path}")
-
-
-def check_load_mosek_license():
-    os.environ["MOSEKLM_LICENSE_FILE"] = "mosek.lic"
-    env = mosek.Env()
-    # env.putlicensedebug(1)
-    # env.checkoutlicense(mosek.feature.ptopt)
-    version = env.getversion()
-    LOGGER.info(f"moseck license loaded, version:{version}")
 
 
 if __name__ == '__main__':
@@ -799,294 +777,295 @@ if __name__ == '__main__':
     check_load_model(cfg)
     check_load_mosek_license()
 
-    IS_TEST = args.is_test
+    # IS_TEST = args.is_test
 
-    if IS_TEST:
-        raise NotImplementedError("Test mode not implemented")
-        # current_time = time.struct_time((2024, 2, 1, 9, 10, 45, 0, 0, 0))
-        # while True:
-        #     TMP_DATE = "2024-02-01"
-        #     if current_time.tm_sec >= 40:
-        #         current_time_str = time.strftime("%Y-%m-%d %H:%M:%S", current_time)
-        #         task_time = pd.Timestamp(current_time_str).floor("min") + pd.Timedelta(minutes=1)
-        #         task_time_str = task_time.strftime("%Y-%m-%d %H:%M:%S")
-        #         # do_minute_infer(task_time_str, args, hist_row_list[0], 0)
-        #         with Pool(model_num) as p:
-        #             hist_row_list = p.starmap(do_minute_infer, [(task_time_str, args, hist_row_list[model_id], model_id) for model_id in range(model_num)])
-        #         deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
-        #         current_time = time.localtime(time.mktime(current_time) + 60)
-    else:
-        account_list = []
-        
-        while True:
-            current_time = time.localtime()
-            current_date = time.strftime("%Y-%m-%d", current_time)
+    # if IS_TEST:
+    #     raise NotImplementedError("Test mode not implemented")
+    #     # current_time = time.struct_time((2024, 2, 1, 9, 10, 45, 0, 0, 0))
+    #     # while True:
+    #     #     TMP_DATE = "2024-02-01"
+    #     #     if current_time.tm_sec >= 40:
+    #     #         current_time_str = time.strftime("%Y-%m-%d %H:%M:%S", current_time)
+    #     #         task_time = pd.Timestamp(current_time_str).floor("min") + pd.Timedelta(minutes=1)
+    #     #         task_time_str = task_time.strftime("%Y-%m-%d %H:%M:%S")
+    #     #         # do_minute_infer(task_time_str, args, hist_row_list[0], 0)
+    #     #         with Pool(model_num) as p:
+    #     #             hist_row_list = p.starmap(do_minute_infer, [(task_time_str, args, hist_row_list[model_id], model_id) for model_id in range(model_num)])
+    #     #         deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
+    #     #         current_time = time.localtime(time.mktime(current_time) + 60)
+    # else:
 
-            if current_time.tm_sec >= 5:
+    account_list = []
+    
+    while True:
+        current_time = time.localtime()
+        current_date = time.strftime("%Y-%m-%d", current_time)
 
-                check_print_file_handles()
-                
-                current_time_str = time.strftime("%Y-%m-%d %H:%M:%S", current_time)
-                task_time = pd.Timestamp(current_time_str).floor("30s") + pd.Timedelta(seconds=30)
-                task_time_str = task_time.strftime("%Y-%m-%d %H:%M:%S")
-                trade_date = get_trade_date(task_time_str)
-                if trade_date is None:
-                    print(f"[{task_time_str}] not trade date, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+        if current_time.tm_sec >= 5:
+
+            check_print_file_handles()
+            
+            current_time_str = time.strftime("%Y-%m-%d %H:%M:%S", current_time)
+            task_time = pd.Timestamp(current_time_str).floor("30s") + pd.Timedelta(seconds=30)
+            task_time_str = task_time.strftime("%Y-%m-%d %H:%M:%S")
+            trade_date = get_trade_date(task_time_str)
+            if trade_date is None:
+                print(f"[{task_time_str}] not trade date, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+                time.sleep(30 - (time.localtime().tm_sec) % 30 + 5)
+                continue
+            
+            # SDK_WRAPPER = SDKWrapper(date=trade_date, accounts=[a['name'] for a in cfg['account']], net_mode=False, univ_name=cfg["universe"])
+            # SDK_WRAPPER = SDKWrapper(date=trade_date, net_mode=False, univ_name=cfg["universe"])
+            engles_cli = SDKWrapper(date=trade_date, accounts=[cfg['account'][0]['name']], net_mode=False, univ_name=cfg["universe"])
+            ENGLES_CLI_GLOBAL_HOLDER = engles_cli
+            if not account_list:
+                account_list = [Account(c, args.config, args.prev_data_csv_path, engles_cli) for c in cfg["account"]]
+            
+            # print(f"task begin time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))}.{int((t - int(t)) * 1e3):03d}")
+            try:
+                for account in account_list:
+                    account.try_reset(trade_date, engles_cli)
+
+                if not engles_cli.is_trading_time(task_time_str):
+                    LOGGER.info(f"[{task_time_str}] not trading time, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     time.sleep(30 - (time.localtime().tm_sec) % 30 + 5)
                     continue
-                
-                # SDK_WRAPPER = SDKWrapper(date=trade_date, accounts=[a['name'] for a in cfg['account']], net_mode=False, univ_name=cfg["universe"])
-                # SDK_WRAPPER = SDKWrapper(date=trade_date, net_mode=False, univ_name=cfg["universe"])
-                engles_cli = SDKWrapper(date=trade_date, accounts=[cfg['account'][0]['name']], net_mode=False, univ_name=cfg["universe"])
-                ENGLES_CLI_GLOBAL_HOLDER = engles_cli
-                if not account_list:
-                    account_list = [Account(c, args.config, args.prev_data_csv_path, engles_cli) for c in cfg["account"]]
-                
-                # print(f"task begin time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))}.{int((t - int(t)) * 1e3):03d}")
-                try:
-                    for account in account_list:
-                        account.try_reset(trade_date, engles_cli)
 
-                    if not engles_cli.is_trading_time(task_time_str):
-                        LOGGER.info(f"[{task_time_str}] not trading time, skip, {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                        time.sleep(30 - (time.localtime().tm_sec) % 30 + 5)
-                        continue
-
-                    universe = engles_cli.deploy_read_universe(cfg["universe"])  # T30R20
-                    if EXCHANGE in ['CF', 'CF5m']:
-                        universe_2d = engles_cli.deploy_read_universe('all')  # all
-                    else:
-                        universe_2d = engles_cli.deploy_read_universe(f'{cfg["universe"]}_2d')  # 2d
-                        
-                    # engles_cli.deploy_write_holding(task_time_str, pd.Series(0.0, index=universe)) # 紧急平仓打开这个
-                    # exit(0) # 紧急平仓打开这个
-
-                    valid_insts = pd.Series(1, index=universe)
-
-                    # coef_df = pd.read_csv("deploy/cost.csv", index_col=0).reindex(universe)
-                    task_list = []
-                    for model_id in range(model_num):
-                        task_list.append((task_time_str, cfg, universe, 'model', model_id))
-                    # do_minute_infer(task_time_str, cfg, universe, "model", 0)
-                    with Pool(model_num) as p:
-                        ret = p.starmap(do_minute_infer, task_list)
-                        
-                    LOGGER.info("model inference done")
+                universe = engles_cli.deploy_read_universe(cfg["universe"])
+                if EXCHANGE in ['CF', 'CF5m']:
+                    universe_2d = engles_cli.deploy_read_universe('all')  # all
+                else:
+                    universe_2d = engles_cli.deploy_read_universe(f'{cfg["universe"]}_2d')  # 2d
                     
-                    fusion_preds = [sum([r[0][i] for r in ret]) / model_num for i in range(len(ret[0][0]))]
-                    fusion_prob_preds = [sum([r[1][i] for r in ret]) / model_num for i in range(len(ret[0][1]))]
+                # engles_cli.deploy_write_holding(task_time_str, pd.Series(0.0, index=universe)) # 紧急平仓打开这个
+                # exit(0) # 紧急平仓打开这个
+
+                valid_insts = pd.Series(1, index=universe)
+
+                # coef_df = pd.read_csv("deploy/cost.csv", index_col=0).reindex(universe)
+                task_list = []
+                for model_id in range(model_num):
+                    task_list.append((task_time_str, cfg, universe, 'model', model_id))
+                # do_minute_infer(task_time_str, cfg, universe, "model", 0)
+                with Pool(model_num) as p:
+                    ret = p.starmap(do_minute_infer, task_list)
                     
-                    # prepare data for opt
-                    last_turnover = None
-                    last_bid1_price = None
-                    last_ask1_price = None
-                    last_bid1_volume = None
-                    last_ask1_volume = None
-                    half_spread_mean = None
-                    book1_value_sum0 = None
-                    book1_value_sum1 = None
+                LOGGER.info("model inference done")
+                
+                fusion_preds = [sum([r[0][i] for r in ret]) / model_num for i in range(len(ret[0][0]))]
+                fusion_prob_preds = [sum([r[1][i] for r in ret]) / model_num for i in range(len(ret[0][1]))]
+                
+                # prepare data for opt
+                last_turnover = None
+                last_bid1_price = None
+                last_ask1_price = None
+                last_bid1_volume = None
+                last_ask1_volume = None
+                half_spread_mean = None
+                book1_value_sum0 = None
+                book1_value_sum1 = None
 
-                    if EXCHANGE in ["okx", "okx10m", "binance5m", "okx5m"]:
-                        fee = pd.Series(cfg["account"][0]["strategy"]["fee"], index=universe).values
-                    elif EXCHANGE in ["CF5m"]:
-                        fee = engles_cli.deploy_read_fee_rates(account_list[0].account_name).reindex(universe).fillna(0).values
+                if EXCHANGE in ["okx", "okx10m", "binance5m", "okx5m"]:
+                    fee = pd.Series(cfg["account"][0]["strategy"]["fee"], index=universe).values
+                elif EXCHANGE in ["CF5m"]:
+                    fee = engles_cli.deploy_read_fee_rates(account_list[0].account_name).reindex(universe).fillna(0).values
+                else:
+                    raise ValueError("fee not supported")
+
+                last_inst_close_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "close_price").values[0] for inst in universe])
+                # last_inst_bid1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_price").values[0] for inst in universe])
+                # last_inst_ask1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_price").values[0] for inst in universe])
+                last_std = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, cfg["std_name"]).values[0] for inst in universe])
+                last_valid = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "valid").eq(1).values[0] for inst in universe])
+                ret1m = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ret1m").values[0] for inst in universe])
+                if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
+                    turnover_ma0 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r1").values[0] for inst in universe])
+                    turnover_ma1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r200").values[0] for inst in universe])
+                    # turnover_ma2 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r200").values[0] for inst in universe])
+                    corr1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r10").values[0] for inst in universe])
+                    corr2 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r40").values[0] for inst in universe])
+                    corr3 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r160").values[0] for inst in universe])
+                    oi = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "open_interest").values[0] for inst in universe])
+                    funding_fee = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "funding_1hr_r24h").values[0] for inst in universe])
+                else:
+                    turnover_ma0 = None
+                    turnover_ma1 = None
+                    # turnover_ma2 = None
+                    corr1 = None
+                    corr2 = None
+                    corr3 = None
+                    oi = None
+                    funding_fee = None
+
+                # spread = (last_inst_ask1_price - last_inst_bid1_price)
+                # cost = spread * coef_coef / last_inst_close_price
+                # cost = coef_df["cost"] / 1e4
+                # MISSING_COST = cfg["cost_adjust"]["missing_cost"]
+                # MIN_COST = cfg["cost_adjust"]["min_cost"]
+                # MAX_COST = cfg["cost_adjust"]["max_cost"]
+                # # pass_cost = coef_df["cost"] / 1e4
+                # # assert cfg["cost_adjust"]["pct_shift"] <= 0.5 and cfg["cost_adjust"]["pct_shift"] >= 0
+                # # cost = cost.clip(pass_cost * (1 - cfg["cost_adjust"]["pct_shift"]), pas
+                # s_cost * (1 + cfg["cost_adjust"]["pct_shift"]))
+                # cost[~np.isfinite(cost)] = MISSING_COST
+                # cost = cost.clip(MIN_COST, MAX_COST)
+
+                assert len(account_list) == 1
+                for account in account_list:
+                    if account.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"] and last_turnover is None:
+                        last_turnover = np.array([engles_cli.deploy_read_last_turnover(task_time_str, inst).values[0] for inst in universe])
+                        last_turnover[~np.isfinite(last_turnover)] = 0
+                        half_spread_mean = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "half_spread_mean").values[0] for inst in universe])
+                        book1_value_sum0 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "book1_value_sum_1s_r1").values[0] for inst in universe])
+                        book1_value_sum1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "book1_value_sum_1s_r200").values[0] for inst in universe])
+                    elif account.strategy_cfg["exec_info"]["exec_type"] == "take" and last_bid1_price is None and last_ask1_price is None and last_bid1_volume is None and last_ask1_volume is None:
+                        last_bid1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_price").values[0] for inst in universe])
+                        last_ask1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_price").values[0] for inst in universe])
+                        last_bid1_volume = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_volume").values[0] for inst in universe])
+                        last_ask1_volume = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_volume").values[0] for inst in universe])
+                        last_bid1_price[~np.isfinite(last_bid1_price)] = 0
+                        last_ask1_price[~np.isfinite(last_ask1_price)] = 0
+                        last_bid1_volume[~np.isfinite(last_bid1_volume)] = 0
+                        last_ask1_volume[~np.isfinite(last_ask1_volume)] = 0
                     else:
-                        raise ValueError("fee not supported")
+                        raise ValueError("unknown exec type")
 
-                    last_inst_close_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "close_price").values[0] for inst in universe])
-                    # last_inst_bid1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_price").values[0] for inst in universe])
-                    # last_inst_ask1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_price").values[0] for inst in universe])
-                    last_std = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, cfg["std_name"]).values[0] for inst in universe])
-                    last_valid = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "valid").eq(1).values[0] for inst in universe])
-                    ret1m = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ret1m").values[0] for inst in universe])
+                    account.deploy_last_row = engles_cli.deploy_read_last_holding(account.account_name).reindex(universe).fillna(0)
+                    account.hist_row = [h.reindex(universe).fillna(0) for h in account.hist_row]
+                    account.valid_insts = valid_insts.copy()
+
+                    for l in account.hist_row:
+                        account.valid_insts[l[l.abs() > 1e-6].index] = 1
+                        
+                    LOGGER.info("opt begin")
+                    account.fusion_row = do_minute_opt(
+                        cfg=account.strategy_cfg, last_row=account.hist_row,
+                        # signals=fusion_preds,
+                        # probs=fusion_prob_preds,
+                        signals=fusion_preds[:1], probs=fusion_prob_preds[:1],
+                        last_price=last_inst_close_price, last_std=last_std,
+                        last_turnover=last_turnover, last_bid1_price=last_bid1_price,
+                        last_ask1_price=last_ask1_price, last_bid1_volume=last_bid1_volume,
+                        last_ask1_volume=last_ask1_volume, last_valid=last_valid & account.valid_insts.eq(1).values,
+                        turnover_ma0=turnover_ma0, turnover_ma1=turnover_ma1,
+                        # turnover_ma2=turnover_ma2,
+                        corr1=corr1, corr2=corr2, corr3=corr3, oi=oi, ret1m=ret1m, ts=task_time_str, fee=fee,
+                        funding_fee=funding_fee, half_spread_mean=half_spread_mean, book1_value_sum0=book1_value_sum0, book1_value_sum1=book1_value_sum1,
+                    )
+
+                    # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), "opt done")
+                    fusion_row_df = pd.DataFrame(
+                        [sum(account.fusion_row).values, np.zeros_like(account.fusion_row[0]), last_inst_close_price],
+                        index=["holding", "ty", "close_price"], columns=account.fusion_row[0].index).T
+                    
+                    LOGGER.info(f"debug fusion_row:{task_time_str},\n{fusion_row_df}")
+                    
+                    # engles_cli.deploy_write_holding(task_time_str, fusion_row_df)
+                    
+                    # # write close holding
+                    # close_symbols = sorted(set(universe_2d) - set(universe))
+                    # if len(close_symbols) > 0:
+                    #     close_holding = pd.Series(0.0, index=close_symbols).to_frame(name='holding')
+                    #     engles_cli.deploy_write_holding(task_time_str, close_holding)
+                        
+                    account.hist_row = account.fusion_row
+
+                t = time.time()
+                # holding 已传给执行，这里做一些信息记录和后处理
+                write_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
+                last_ret1ms = pd.Series(ret1m, index=universe).mul(1e4).rename("ret1m(bp)")
+                last_midret1ms = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "midret1m").values[0] for inst in universe], index=universe).mul(1e4).rename("midret1m(bp)")
+                if EXCHANGE in ["CF"]:
+                    vwap_slippage = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "vwap_slippage").values[0] for inst in universe],
+                                                index=universe).mul(1e4).rename("vwap_slippage(bp)")
+                elif EXCHANGE in ["okx10m", "binance5m", "binance5m", "okx5m", "CF5m"]:
+                    vwap_slippage = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "twap_slippage").values[0] for inst in universe],
+                                                index=universe).mul(1e4).rename("vwap_slippage(bp)")
+                else:
+                    raise ValueError("unknown exchange")
+
+                # pred1 = fusion_pred1.mul(1e4).rename("pred1(bp)")
+                # pred2 = fusion_pred2.mul(1e4).rename("pred2(bp)")
+                preds = [p.mul(1e4).rename(f"pred{i+1}(bp)") for i, p in enumerate(fusion_preds)]
+                prob_preds = [p.rename(f"prob_pred{i+1}") for i, p in enumerate(fusion_prob_preds)]
+                for account in account_list:
+                    info = pd.concat(
+                        [
+                            sum(account.fusion_row).rename("holding(%)").mul(100).to_frame(),
+                            *[p.to_frame() for p in preds],
+                            *[p.to_frame() for p in prob_preds],
+                            last_ret1ms.to_frame(),
+                            last_midret1ms.to_frame(),
+                            vwap_slippage.to_frame(),
+                            # vwap_slippage_mid.to_frame(),
+                        ],
+                        axis=1).T
+                    info.loc["limit_make"] = False
+                    info.loc["close_price"] = last_inst_close_price
+                    info.loc["real_holding(%)"] = account.deploy_last_row.mul(100)
+                    info.loc["valid"] = last_valid & account.valid_insts.eq(1)
                     if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
-                        turnover_ma0 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r1").values[0] for inst in universe])
-                        turnover_ma1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r200").values[0] for inst in universe])
-                        # turnover_ma2 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r200").values[0] for inst in universe])
-                        corr1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r10").values[0] for inst in universe])
-                        corr2 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r40").values[0] for inst in universe])
-                        corr3 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, f"corr_market_{cfg['universe']}_r160").values[0] for inst in universe])
-                        oi = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "open_interest").values[0] for inst in universe])
-                        funding_fee = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "funding_1hr_r24h").values[0] for inst in universe])
+                        info.loc["turnover_ma0(1e6)"] = turnover_ma0 / 1e6
+                        info.loc["turnover_ma1(1e6)"] = turnover_ma1 / 1e6
+                        # info.loc["turnover_ma2(1e6)"] = turnover_ma2 / 1e6
+                        info.loc["turnover_abnormal_coef1"] = turnover_ma0.sum() / turnover_ma1.sum()
+                        # info.loc["turnover_abnormal_coef2"] = turnover_ma1 / turnover_ma2
+                        info.loc["corr1"] = corr1
+                        info.loc["corr2"] = corr2
+                        info.loc["corr3"] = corr3
+                        info.loc["oi(1e6)"] = oi / 1e6
+                        info.loc["funding_fee(bp)"] = funding_fee * 1e4
+                    info.loc["fee(bp)"] = fee * 1e4
+                    if account.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"]:
+                        info.loc["last_turnover(1e6)"] = last_turnover / 1e6
+                        info.loc["half_spread_mean/close(bp)"] = half_spread_mean / last_inst_close_price * 1e4
+                    elif account.strategy_cfg["exec_info"]["exec_type"] == "take":
+                        info.loc["last_bid1_price"] = last_bid1_price
+                        info.loc["last_ask1_price"] = last_ask1_price
+                        info.loc["last_bid1_volume"] = last_bid1_volume
+                        info.loc["last_ask1_volume"] = last_ask1_volume
+                        info.loc["last_bid1_turnover"] = last_bid1_price * last_bid1_volume
+                        info.loc["last_ask1_turnover"] = last_ask1_price * last_ask1_volume
+                        vwap_slippage_mid = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "vwap_slippage_mid").values[0] for inst in universe],
+                                                        index=universe).mul(1e4).rename("vwap_slippage_mid(bp)")
+                        info.loc["vwap_slippage_mid(bp)"] = vwap_slippage_mid
                     else:
-                        turnover_ma0 = None
-                        turnover_ma1 = None
-                        # turnover_ma2 = None
-                        corr1 = None
-                        corr2 = None
-                        corr3 = None
-                        oi = None
-                        funding_fee = None
+                        raise ValueError("unknown exec type")
 
-                    # spread = (last_inst_ask1_price - last_inst_bid1_price)
-                    # cost = spread * coef_coef / last_inst_close_price
-                    # cost = coef_df["cost"] / 1e4
-                    # MISSING_COST = cfg["cost_adjust"]["missing_cost"]
-                    # MIN_COST = cfg["cost_adjust"]["min_cost"]
-                    # MAX_COST = cfg["cost_adjust"]["max_cost"]
-                    # # pass_cost = coef_df["cost"] / 1e4
-                    # # assert cfg["cost_adjust"]["pct_shift"] <= 0.5 and cfg["cost_adjust"]["pct_shift"] >= 0
-                    # # cost = cost.clip(pass_cost * (1 - cfg["cost_adjust"]["pct_shift"]), pas
-                    # s_cost * (1 + cfg["cost_adjust"]["pct_shift"]))
-                    # cost[~np.isfinite(cost)] = MISSING_COST
-                    # cost = cost.clip(MIN_COST, MAX_COST)
-
-                    assert len(account_list) == 1
-                    for account in account_list:
-                        if account.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"] and last_turnover is None:
-                            last_turnover = np.array([engles_cli.deploy_read_last_turnover(task_time_str, inst).values[0] for inst in universe])
-                            last_turnover[~np.isfinite(last_turnover)] = 0
-                            half_spread_mean = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "half_spread_mean").values[0] for inst in universe])
-                            book1_value_sum0 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "book1_value_sum_1s_r1").values[0] for inst in universe])
-                            book1_value_sum1 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "book1_value_sum_1s_r200").values[0] for inst in universe])
-                        elif account.strategy_cfg["exec_info"]["exec_type"] == "take" and last_bid1_price is None and last_ask1_price is None and last_bid1_volume is None and last_ask1_volume is None:
-                            last_bid1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_price").values[0] for inst in universe])
-                            last_ask1_price = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_price").values[0] for inst in universe])
-                            last_bid1_volume = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "bid1_volume").values[0] for inst in universe])
-                            last_ask1_volume = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "ask1_volume").values[0] for inst in universe])
-                            last_bid1_price[~np.isfinite(last_bid1_price)] = 0
-                            last_ask1_price[~np.isfinite(last_ask1_price)] = 0
-                            last_bid1_volume[~np.isfinite(last_bid1_volume)] = 0
-                            last_ask1_volume[~np.isfinite(last_ask1_volume)] = 0
-                        else:
-                            raise ValueError("unknown exec type")
-
-                        account.deploy_last_row = engles_cli.deploy_read_last_holding(account.account_name).reindex(universe).fillna(0)
-                        account.hist_row = [h.reindex(universe).fillna(0) for h in account.hist_row]
-                        account.valid_insts = valid_insts.copy()
-
-                        for l in account.hist_row:
-                            account.valid_insts[l[l.abs() > 1e-6].index] = 1
-                            
-                        LOGGER.info("opt begin")
-                        account.fusion_row = do_minute_opt(
-                            cfg=account.strategy_cfg, last_row=account.hist_row,
-                            # signals=fusion_preds,
-                            # probs=fusion_prob_preds,
-                            signals=fusion_preds[:1], probs=fusion_prob_preds[:1],
-                            last_price=last_inst_close_price, last_std=last_std,
-                            last_turnover=last_turnover, last_bid1_price=last_bid1_price,
-                            last_ask1_price=last_ask1_price, last_bid1_volume=last_bid1_volume,
-                            last_ask1_volume=last_ask1_volume, last_valid=last_valid & account.valid_insts.eq(1).values,
-                            turnover_ma0=turnover_ma0, turnover_ma1=turnover_ma1,
-                            # turnover_ma2=turnover_ma2,
-                            corr1=corr1, corr2=corr2, corr3=corr3, oi=oi, ret1m=ret1m, ts=task_time_str, fee=fee,
-                            funding_fee=funding_fee, half_spread_mean=half_spread_mean, book1_value_sum0=book1_value_sum0, book1_value_sum1=book1_value_sum1,
-                        )
-
-                        # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), "opt done")
-                        fusion_row_df = pd.DataFrame(
-                            [sum(account.fusion_row).values, np.zeros_like(account.fusion_row[0]), last_inst_close_price],
-                            index=["holding", "ty", "close_price"], columns=account.fusion_row[0].index).T
-                        
-                        LOGGER.info(f"debug fusion_row:{task_time_str},\n{fusion_row_df}")
-                        
-                        # engles_cli.deploy_write_holding(task_time_str, fusion_row_df)
-                        
-                        # # write close holding
-                        # close_symbols = sorted(set(universe_2d) - set(universe))
-                        # if len(close_symbols) > 0:
-                        #     close_holding = pd.Series(0.0, index=close_symbols).to_frame(name='holding')
-                        #     engles_cli.deploy_write_holding(task_time_str, close_holding)
-                            
-                        account.hist_row = account.fusion_row
-
-                    t = time.time()
-                    # holding 已传给执行，这里做一些信息记录和后处理
-                    write_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
-                    last_ret1ms = pd.Series(ret1m, index=universe).mul(1e4).rename("ret1m(bp)")
-                    last_midret1ms = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "midret1m").values[0] for inst in universe], index=universe).mul(1e4).rename("midret1m(bp)")
-                    if EXCHANGE in ["CF"]:
-                        vwap_slippage = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "vwap_slippage").values[0] for inst in universe],
-                                                  index=universe).mul(1e4).rename("vwap_slippage(bp)")
-                    elif EXCHANGE in ["okx10m", "binance5m", "binance5m", "okx5m", "CF5m"]:
-                        vwap_slippage = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "twap_slippage").values[0] for inst in universe],
-                                                  index=universe).mul(1e4).rename("vwap_slippage(bp)")
+                    info.loc["last_var(1e-5)"] = last_std * last_std * 1e5
+                    # exchange_api = create_exchange_api(account.account_name)
+                    # real_qty_holding = pd.Series(exchange_api.query_position())
+                    # info.loc["real_qty_holding"] = real_qty_holding.reindex(info.columns).fillna(0)
+                    # info.loc["real_equity"] = exchange_api.query_account_information().margin_balance
+                    info.loc["real_equity"] = engles_cli.deploy_read_equity(account.account_name)
+                    for i, h in enumerate(account.hist_row):
+                        info.loc[f"holding_stage{i}(%)"] = h.mul(100)
+                    info = info.round(3)
+                    tmp = info.copy()
+                    if EXCHANGE in ["binance5m", "okx5m", "okx10m"]:
+                        tmp.columns = [i.split("-")[1] for i in tmp.columns]
+                    elif EXCHANGE in ["CF", "CF5m"]:
+                        pass
                     else:
                         raise ValueError("unknown exchange")
 
-                    # pred1 = fusion_pred1.mul(1e4).rename("pred1(bp)")
-                    # pred2 = fusion_pred2.mul(1e4).rename("pred2(bp)")
-                    preds = [p.mul(1e4).rename(f"pred{i+1}(bp)") for i, p in enumerate(fusion_preds)]
-                    prob_preds = [p.rename(f"prob_pred{i+1}") for i, p in enumerate(fusion_prob_preds)]
-                    for account in account_list:
-                        info = pd.concat(
-                            [
-                                sum(account.fusion_row).rename("holding(%)").mul(100).to_frame(),
-                                *[p.to_frame() for p in preds],
-                                *[p.to_frame() for p in prob_preds],
-                                last_ret1ms.to_frame(),
-                                last_midret1ms.to_frame(),
-                                vwap_slippage.to_frame(),
-                                # vwap_slippage_mid.to_frame(),
-                            ],
-                            axis=1).T
-                        info.loc["limit_make"] = False
-                        info.loc["close_price"] = last_inst_close_price
-                        info.loc["real_holding(%)"] = account.deploy_last_row.mul(100)
-                        info.loc["valid"] = last_valid & account.valid_insts.eq(1)
-                        if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
-                            info.loc["turnover_ma0(1e6)"] = turnover_ma0 / 1e6
-                            info.loc["turnover_ma1(1e6)"] = turnover_ma1 / 1e6
-                            # info.loc["turnover_ma2(1e6)"] = turnover_ma2 / 1e6
-                            info.loc["turnover_abnormal_coef1"] = turnover_ma0.sum() / turnover_ma1.sum()
-                            # info.loc["turnover_abnormal_coef2"] = turnover_ma1 / turnover_ma2
-                            info.loc["corr1"] = corr1
-                            info.loc["corr2"] = corr2
-                            info.loc["corr3"] = corr3
-                            info.loc["oi(1e6)"] = oi / 1e6
-                            info.loc["funding_fee(bp)"] = funding_fee * 1e4
-                        info.loc["fee(bp)"] = fee * 1e4
-                        if account.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"]:
-                            info.loc["last_turnover(1e6)"] = last_turnover / 1e6
-                            info.loc["half_spread_mean/close(bp)"] = half_spread_mean / last_inst_close_price * 1e4
-                        elif account.strategy_cfg["exec_info"]["exec_type"] == "take":
-                            info.loc["last_bid1_price"] = last_bid1_price
-                            info.loc["last_ask1_price"] = last_ask1_price
-                            info.loc["last_bid1_volume"] = last_bid1_volume
-                            info.loc["last_ask1_volume"] = last_ask1_volume
-                            info.loc["last_bid1_turnover"] = last_bid1_price * last_bid1_volume
-                            info.loc["last_ask1_turnover"] = last_ask1_price * last_ask1_volume
-                            vwap_slippage_mid = pd.Series([engles_cli.deploy_read_last_alpha(task_time_str, inst, "vwap_slippage_mid").values[0] for inst in universe],
-                                                          index=universe).mul(1e4).rename("vwap_slippage_mid(bp)")
-                            info.loc["vwap_slippage_mid(bp)"] = vwap_slippage_mid
-                        else:
-                            raise ValueError("unknown exec type")
+                    LOGGER.info(f"\n{tmp.round(3)}")
+                    LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
+                    LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
+                    info.to_csv(f"deploy/data/{account.run_name}/{task_time_str}.csv")
 
-                        info.loc["last_var(1e-5)"] = last_std * last_std * 1e5
-                        # exchange_api = create_exchange_api(account.account_name)
-                        # real_qty_holding = pd.Series(exchange_api.query_position())
-                        # info.loc["real_qty_holding"] = real_qty_holding.reindex(info.columns).fillna(0)
-                        # info.loc["real_equity"] = exchange_api.query_account_information().margin_balance
-                        info.loc["real_equity"] = engles_cli.deploy_read_equity(account.account_name)
-                        for i, h in enumerate(account.hist_row):
-                            info.loc[f"holding_stage{i}(%)"] = h.mul(100)
-                        info = info.round(3)
-                        tmp = info.copy()
-                        if EXCHANGE in ["binance5m", "okx5m", "okx10m"]:
-                            tmp.columns = [i.split("-")[1] for i in tmp.columns]
-                        elif EXCHANGE in ["CF", "CF5m"]:
-                            pass
-                        else:
-                            raise ValueError("unknown exchange")
+                # for account in account_list:
+                #     os.system(f"python deploy/show_pnl.py '{account.run_name}'")
+                LOGGER.info(f"{task_time_str}, done")
+                
+                t = time.time()
+                task_end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
+                LOGGER.info(f"write time: {write_time_str}, end time: {task_end_time_str}")
 
-                        LOGGER.info(f"\n{tmp.round(3)}")
-                        LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
-                        LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
-                        info.to_csv(f"deploy/data/{account.run_name}/{task_time_str}.csv")
-
-                    # for account in account_list:
-                    #     os.system(f"python deploy/show_pnl.py '{account.run_name}'")
-                    LOGGER.info(f"{task_time_str}, done")
-                    
-                    t = time.time()
-                    task_end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
-                    LOGGER.info(f"write time: {write_time_str}, end time: {task_end_time_str}")
-
-                except Exception as e:
-                    # engles_cli.deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
-                    dump_log("[MAIN ERROR]", time.strftime("%Y-%m-%d %H:%M:%S", current_time), traceback.format_exc())
-                    # for account in account_list:
-                    #     account.reset_holding()
-                finally:
-                    engles_cli.close()
+            except Exception as e:
+                # engles_cli.deploy_write_holding(task_time_str, sum(hist_row_list) / model_num)
+                dump_log("[MAIN ERROR]", time.strftime("%Y-%m-%d %H:%M:%S", current_time), traceback.format_exc())
+                # for account in account_list:
+                #     account.reset_holding()
+            finally:
+                engles_cli.close()
