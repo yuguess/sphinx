@@ -15,7 +15,7 @@ from mona.common.logging import get_logger
 from sphinx.util.exchange_api import get_env_exchange
 from core.model import gen_model
 from .run_helper import parse_args, get_mdl_num, add_model_legacy_path, sanity_check, get_cn_rnd_up_min_ts, dump_log, gen_minute_encode_pred, decode_pred
-from .okx_10min_sdk import create_infra_sdk
+from .okx_5min_sdk import create_infra_sdk
 
 
 LOGGER = get_logger('okx_10min')
