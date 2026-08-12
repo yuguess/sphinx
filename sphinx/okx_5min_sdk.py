@@ -1,10 +1,9 @@
+import time
 import math
 import pandas as pd
 import numpy as np
-import time
 
 from mona import sdk
-from mona.common import metadata
 from mona.common.util import dbtool
 
 
@@ -47,8 +46,8 @@ class SDKWrapper:
             'open_interest': 'oi/oi_quote',
         }
 
-        days_num = math.ceil(sdk.DEPLOY_HISTORY_LENGTH / self._index.shape[0])
-        dates = metadata.dates(metadata.calc_date(self._date, -days_num), self._date)
+        # days_num = math.ceil(sdk.DEPLOY_HISTORY_LENGTH / self._index.shape[0])
+        # dates = metadata.dates(metadata.calc_date(self._date, -days_num), self._date)
 
         self._index_groups = None
         self._group_index_ts = None
@@ -61,13 +60,13 @@ class SDKWrapper:
         # apply night session mask if CF
         self._time_valid_normal = self._time_valid.copy()
         self.last_alpha_cache = {}
-        
+
     def _read_time_valid(self, i: int) -> pd.Series:
         return pd.Series(1, index=self._ctx.univ_symbols)
-    
+
     def _find_accounts(self) -> list[str]:
         return [p.parent.name for p in sdk.SHMEXE_ROOT.glob(f'*/{self._date}')]
-    
+
     def _is_trading_time(self, ts: float, index_ts: pd.Index) -> bool:
         i = np.searchsorted(index_ts, ts, side='left')
         if i >= len(index_ts):
@@ -75,20 +74,20 @@ class SDKWrapper:
         if ts != index_ts[i]:
             return False  # not in the index
         return True
-    
+
     def _find_index(self, ts: float) -> int:
         i = np.searchsorted(self._full_index_ts, ts, side='right')
         assert i > 0
         # return i - 2
         return i - 1
-    
+
     def deploy_read_nav(self, account: str) -> float:
         return self._ectxs[account].sh.read('nav').query('account == @account.encode()').nav.iloc[-1]
-    
+
     def is_trading_time(self, time_str: str) -> bool:
         ts = pd.Timestamp(time_str, tz='Asia/Shanghai').timestamp()
         return self._is_trading_time(ts, self._full_index_ts)
-    
+
     def deploy_read_universe(self, universe_name: str) -> list[str]:
         univ: pd.Series = dbtool.read_wide(self._date, f'source/meta/{universe_name}').squeeze()
         return univ.index[univ != 0].tolist()
@@ -113,10 +112,10 @@ class SDKWrapper:
             return pd.Series(last_alpha[inst])
         ts = pd.Timestamp(time_str, tz='Asia/Shanghai').timestamp()
         i = self._find_index(ts) - self._full_index.shape[0] + self._index.shape[0]
-        
+
         if alpha == 'valid':
             return self.deploy_read_last_alpha(time_str, inst, "ret1m").notna().astype(float)
-            
+
         if inst.startswith('market_'):
             univ = inst[len('market_'):]
             # todo: 缓存加速
@@ -146,11 +145,11 @@ class SDKWrapper:
     def deploy_read_last_turnover(self, _, inst) -> pd.Series:
         i = self._find_index(time.time()) - self._full_index.shape[0] + self._index.shape[0]
         return pd.Series(self._ctx.read_source(self._source_map['turnover'], i)[inst])
-    
+
     def deploy_read_equity(self, account: str) -> float:
         fund = self._ectxs[account].get_fund()
         return fund.eq
-    
+
     def close(self):
         for ectx in self._ectxs.values():
             ectx.close()

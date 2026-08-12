@@ -207,9 +207,9 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
 
     univ = infra_sdk.deploy_read_universe(cfg["universe"])
     univ_2d = infra_sdk.deploy_read_universe(f'{cfg["universe"]}_2d')
-    
+
     valid_univ = pd.Series(1, index=univ)
-    
+
     task_arg_tps = [(task_time_s, cfg, univ, 'model', mdl_idx, trade_dt_s) for mdl_idx in range(model_num)]
     with Pool(model_num) as p:
         ret = p.starmap(do_min_infer_wrapper, task_arg_tps)
@@ -217,7 +217,7 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     # ret shape is like  #Model X 2 X #Channel
     fusion_preds = [sum([r[0][i] for r in ret]) / model_num for i in range(len(ret[0][0]))]
     fusion_prob_preds = [sum([r[1][i] for r in ret]) / model_num for i in range(len(ret[0][1]))]
-    
+
     # prepare data for opt
     last_turnover = None
     last_bid1_price = None
@@ -236,7 +236,7 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     last_std = np.array([infra_sdk.deploy_read_last_alpha(task_time_s, inst, cfg["std_name"]).values[0] for inst in univ])
     last_valid = np.array([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "valid").eq(1).values[0] for inst in univ])
     ret1m = np.array([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "ret1m").values[0] for inst in univ])
-    
+
     turnover_ma0 = np.array([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "turnover_r1").values[0] for inst in univ])
     turnover_ma1 = np.array([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "turnover_r200").values[0] for inst in univ])
     # turnover_ma2 = np.array([engles_cli.deploy_read_last_alpha(task_time_str, inst, "turnover_r200").values[0] for inst in universe])
@@ -301,7 +301,7 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
         book1_value_sum0=book1_value_sum0,
         book1_value_sum1=book1_value_sum1,
     )
-    
+
     fusion_row_df = pd.DataFrame(
         [sum(fusion_row).values, np.zeros_like(fusion_row[0]), last_inst_close_price],
         index=["holding", "ty", "close_price"], columns=fusion_row[0].index).T
@@ -314,16 +314,16 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     # if len(close_symbols) > 0:
     #     close_holding = pd.Series(0.0, index=close_symbols).to_frame(name='holding')
     #     infra_sdk.deploy_write_holding(task_time_s, close_holding, infra_sdk.strategy_cfg["ty"])
-        
+
     loop_ctx.hist_row = fusion_row
-    
+
     # audit booking 
     last_ret1ms = pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "ret1m").values[0] for inst in univ], index=univ).mul(1e4).rename("ret1m(bp)")
     last_midret1ms = pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "midret1m").values[0] for inst in univ], index=univ).mul(1e4).rename("midret1m(bp)")
     vwap_slippage = pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "vwap_slippage").values[0] for inst in univ], index=univ).mul(1e4).rename("vwap_slippage(bp)")
     preds = [p.mul(1e4).rename(f"pred{i + 1}(bp)") for i, p in enumerate(fusion_preds)]
     prob_preds = [p.rename(f"prob_pred{i + 1}") for i, p in enumerate(fusion_prob_preds)]
-    
+
     info = pd.concat(
         [
             sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
@@ -334,7 +334,7 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
             vwap_slippage.to_frame(),
             # vwap_slippage_mid.to_frame(),
         ], axis=1).T
-    
+
     info.loc["limit_make"] = False
     info.loc["close_price"] = last_inst_close_price
     info.loc["real_holding(%)"] = loop_ctx.deploy_last_row.mul(100)
@@ -351,7 +351,7 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     info.loc["oi(1e6)"] = oi / 1e6
     info.loc["funding_fee(bp)"] = funding_fee * 1e4
     info.loc["fee(bp)"] = fee * 1e4
-    
+
     if loop_ctx.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"]:
         info.loc["last_turnover(1e6)"] = last_turnover / 1e6
         info.loc["half_spread_mean/close(bp)"] = half_spread_mean / last_inst_close_price * 1e4

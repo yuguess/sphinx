@@ -2,13 +2,13 @@ import time
 import os
 import sys
 from typing import List, Tuple
+from datetime import datetime
+from argparse import ArgumentParser
 import torch
 import mosek
 import psutil
 import numpy as np
 import pandas as pd
-from datetime import datetime
-from argparse import ArgumentParser
 
 from sphinx.core.model import gen_model
 from mona.common.logging import get_logger
@@ -44,7 +44,7 @@ def assert_mdl_conf(cfg, xhg, model_num) -> None:
 
 def add_model_legacy_path(patch_path_s: str) -> None:
     sys.path.append(patch_path_s)
-    LOGGER.info(f"add {patch_path_s} to syspath")
+    LOGGER.info("add %s to syspath", patch_path_s)
 
 
 def check_load_model(cfg):
@@ -53,7 +53,7 @@ def check_load_model(cfg):
     for model_dir_p in checkpoints:
         mdl_path = os.path.join(cfg[model_name]["path"], model_dir_p, f"{cfg[model_name]['epoch']}.pth.tar")
         torch.load(mdl_path, map_location="cpu", weights_only=False)
-        LOGGER.info(f"load checkpoint :{mdl_path}")
+        LOGGER.info("load checkpoint:%s", str(mdl_path))
 
 
 def check_load_mosek_license():
@@ -62,7 +62,7 @@ def check_load_mosek_license():
     # env.putlicensedebug(1)
     # env.checkoutlicense(mosek.feature.ptopt)
     version = env.getversion()
-    LOGGER.info(f"mosek license loaded, version:{version}")
+    LOGGER.info("mosek license loaded, version:%s", str(version))
 
 
 def sanity_check(cfg, xhg, model_num):
