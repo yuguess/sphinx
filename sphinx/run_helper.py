@@ -58,7 +58,7 @@ def check_load_mosek_license():
     # env.putlicensedebug(1)
     # env.checkoutlicense(mosek.feature.ptopt)
     version = env.getversion()
-    LOGGER.info(f"moseck license loaded, version:{version}")
+    LOGGER.info(f"mosek license loaded, version:{version}")
 
 
 def sanity_check(cfg, xhg, model_num):

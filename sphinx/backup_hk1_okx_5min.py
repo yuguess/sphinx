@@ -4,6 +4,7 @@ import pandas as pd
 import pathlib
 import os
 import torch
+import psutil
 import numpy as np
 import traceback
 from typing import List, Tuple, Optional
@@ -13,10 +14,10 @@ from mona.common import INDEX_INTERVAL
 from mona.common import db, metadata
 from mona.common.logging import get_logger
 from sphinx.util.exchange_api import get_env_exchange
-from core.model import gen_model
+from sphinx.core.model import gen_model
 from .run_helper import parse_args, get_mdl_num, add_model_legacy_path, sanity_check, get_cn_rnd_up_min_ts, dump_log, gen_minute_encode_pred, decode_pred
-from .okx_5min_sdk import create_infra_sdk
-
+from .okx_5min_sdk import create_infra_sdk, SDKWrapper, is_trading_time
+from .okx_5min_opt import GenPortfolio
 
 LOGGER = get_logger('okx_10min')
 
@@ -108,7 +109,9 @@ class LoopCtx:
             LOGGER.info(f"run_name: {self.run_name}")
 
 
-def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
+def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper):
+    # read history start timer
+    st_time = time.time()
 
     torch.set_num_threads(1)
     horizon = cfg[model_name]["horizon"]
@@ -126,8 +129,7 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
     model.load_state_dict(checkpoint[cfg[model_name]["state_dict_key"]])
     normalizer = checkpoint["normalizer"]
 
-    # 暂时 hard code
-    # 顺序不能变！！！
+    # 暂时 hard code, 顺序不能变！！！
     inst_feature_name = [
         "ret1m",  # 必须位于第一个！还会用于 vola 计算
         "ret10m",
@@ -224,7 +226,7 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
     norm_history_inst_feature = (history_inst_feature / normalizer["feature"].std[None, :, None]).clip(-normalizer["feature"].clip, normalizer["feature"].clip)
     norm_history_inst_feature = norm_history_inst_feature[..., -(model.seq_len - 1):]
     
-    # print(f"[{model_id}] to read history cost {(time.time() - st_time)*1e3:.2f}ms")
+    LOGGER.info(f"[{model_id}] read history cost {(time.time() - st_time)*1e3:.2f}ms")
 
     valid = pd.concat([sdk.deploy_read_history_alpha(task_tm_s, inst, "ret1m").notna().rename("valid") for inst in univ], axis=1).values
  
@@ -262,6 +264,8 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
             probs[c].append(prob)
     # hist_df = pd.DataFrame(preds, index=history_index[-(model.seq_len - 1):], columns=universe)
 
+    LOGGER.info("block on last data ready")
+
     # 读最新数据, B = 20, C = 18, T = 1
     read_last_st = time.time()
     last_inst_self_feature_list = []
@@ -285,8 +289,8 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
     norm_last_inst_feature = (last_inst_feature / normalizer["feature"].std[None, :, None]).clip(-normalizer["feature"].clip, normalizer["feature"].clip)
 
     last_valid = np.array([sdk.deploy_read_last_alpha(task_tm_s, inst, "ret1m").notna().values[0] for inst in univ])
-
-    # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), "model read last alpha begin")
+    
+    LOGGER.info("read last done")
 
     last_encode_pred, last_encode_prob = gen_minute_encode_pred(model, norm_last_inst_feature)
     last_preds = []
@@ -309,8 +313,6 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk):
     last_probs = [pd.Series(p, index=univ) for p in last_probs]
     # print(f"[{model_id}] model cost {(time.time() - st_time)*1e3:.2f}ms")
     LOGGER.info(f"[{model_id}] read last cost {(time.time() - read_last_st)*1e3:.2f}ms")
-    # st_time = time.time()
-    # print(f"[{model_id}] opt cost {(time.time() - st_time)*1e3:.2f}ms")
 
     return last_preds, last_probs
 
@@ -320,6 +322,7 @@ def do_min_infer_wrapper(task_tm_s, cfg, univ, model_name, model_idx, trade_dt_s
     try:
         return do_minute_infer(task_tm_s, cfg, univ, model_name, model_idx, sdk)
     except Exception as e:
+        LOGGER.error(f"[{model_name} {model_idx} ERROR], {traceback.format_exc()}", )
         dump_log(f"[{model_name} {model_idx} ERROR], {e}", traceback.format_exc())
         return None
 
@@ -439,19 +442,24 @@ def do_minute_opt(
         return last_row
 
     except Exception as e:
+        LOGGER.error(f"OPT ERROR:{e}, {traceback.format_exc()}")
         dump_log(f"[OPT ERROR]", traceback.format_exc())
         return None
 
 
-def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx) -> LoopCtx:
-    infra_sdk = create_infra_sdk(trade_dt_s, cfg)
+def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, infra_sdk: SDKWrapper) -> LoopCtx:
+    current_process = psutil.Process()
+    file_handles = current_process.open_files()
+    LOGGER.info(f"普通文件句柄数量: {len(file_handles)}")
+
     loop_ctx.try_reset(xhg, trade_dt_s, infra_sdk)
 
+    LOGGER.info(f"run trade date :{trade_dt_s}, task_min:{task_time_s}")
     if not infra_sdk.is_trading_time(task_time_s):
         return loop_ctx
-    
-    univ = infra_sdk.read_universe(cfg["universe"])
-    univ_2d = infra_sdk.read_universe(f'{cfg["universe"]}_2d')
+
+    univ = infra_sdk.deploy_read_universe(cfg["universe"])
+    univ_2d = infra_sdk.deploy_read_universe(f'{cfg["universe"]}_2d')
     
     valid_univ = pd.Series(1, index=univ)
     
@@ -569,24 +577,81 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx) ->
     preds = [p.mul(1e4).rename(f"pred{i + 1}(bp)") for i, p in enumerate(fusion_preds)]
     prob_preds = [p.rename(f"prob_pred{i + 1}") for i, p in enumerate(fusion_prob_preds)]
     
-    info = pd.concat([
-        sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
-        *[p.to_frame() for p in preds],
-        *[p.to_frame() for p in prob_preds],
-        last_ret1ms.to_frame(),
-        last_midret1ms.to_frame(),
-        vwap_slippage.to_frame(),
-        # vwap_slippage_mid.to_frame(),
-        ],axis=1).T
+    # info = pd.concat([
+    #     sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
+    #     *[p.to_frame() for p in preds],
+    #     *[p.to_frame() for p in prob_preds],
+    #     last_ret1ms.to_frame(),
+    #     last_midret1ms.to_frame(),
+    #     vwap_slippage.to_frame(),
+    #     # vwap_slippage_mid.to_frame(),
+    #     ],axis=1).T
+    
+    # info.loc["limit_make"] = False
+    # info.loc["close_price"] = last_inst_close_price
+    # info.loc["real_holding(%)"] = loop_ctx.deploy_last_row.mul(100)
+    # info.loc["valid"] = last_valid & loop_ctx.valid_insts.eq(1)
+
+    # info.loc["fee(bp)"] = fee * 1e4
+    # if loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "make":
+    #     info.loc["last_turnover(1e6)"] = last_turnover / 1e6
+    # elif loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "take":
+    #     info.loc["last_bid1_price"] = last_bid1_price
+    #     info.loc["last_ask1_price"] = last_ask1_price
+    #     info.loc["last_bid1_volume"] = last_bid1_volume
+    #     info.loc["last_ask1_volume"] = last_ask1_volume
+    #     info.loc["last_bid1_turnover"] = last_bid1_price * last_bid1_volume
+    #     info.loc["last_ask1_turnover"] = last_ask1_price * last_ask1_volume
+    #     vwap_slippage_mid = (
+    #         pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "vwap_slippage_mid").values[0] for inst in univ], index=univ).mul(1e4).rename("vwap_slippage_mid(bp)"))
+    #     info.loc["vwap_slippage_mid(bp)"] = vwap_slippage_mid
+        
+    # info.loc["last_var(1e-5)"] = last_std * last_std * 1e5
+    # # exchange_api = create_exchange_api(account.account_name)
+    # # real_qty_holding = pd.Series(exchange_api.query_position())
+    # # info.loc["real_qty_holding"] = real_qty_holding.reindex(info.columns).fillna(0)
+    # # info.loc["real_equity"] = exchange_api.query_account_information().margin_balance
+    # info.loc["real_equity"] = infra_sdk.deploy_read_equity(loop_ctx.account_name)
+    # for i, h in enumerate(loop_ctx.hist_row):
+    #     info.loc[f"holding_stage{i}(%)"] = h.mul(100)
+    # info = info.round(3)
+    # tmp = info.copy()
+    # LOGGER.info(f"\n:{tmp.round(3)}")
+    # LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
+    # LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
+    # info.to_csv(f"deploy/data/{loop_ctx.run_name}/{task_time_s}.csv")
+    
+    info = pd.concat(
+        [
+            sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
+            *[p.to_frame() for p in preds],
+            *[p.to_frame() for p in prob_preds],
+            last_ret1ms.to_frame(),
+            last_midret1ms.to_frame(),
+            vwap_slippage.to_frame(),
+            # vwap_slippage_mid.to_frame(),
+        ], axis=1).T
     
     info.loc["limit_make"] = False
     info.loc["close_price"] = last_inst_close_price
     info.loc["real_holding(%)"] = loop_ctx.deploy_last_row.mul(100)
     info.loc["valid"] = last_valid & loop_ctx.valid_insts.eq(1)
 
+    info.loc["turnover_ma0(1e6)"] = turnover_ma0 / 1e6
+    info.loc["turnover_ma1(1e6)"] = turnover_ma1 / 1e6
+    # info.loc["turnover_ma2(1e6)"] = turnover_ma2 / 1e6
+    info.loc["turnover_abnormal_coef1"] = turnover_ma0.sum() / turnover_ma1.sum()
+    # info.loc["turnover_abnormal_coef2"] = turnover_ma1 / turnover_ma2
+    info.loc["corr1"] = corr1
+    info.loc["corr2"] = corr2
+    info.loc["corr3"] = corr3
+    info.loc["oi(1e6)"] = oi / 1e6
+    info.loc["funding_fee(bp)"] = funding_fee * 1e4
     info.loc["fee(bp)"] = fee * 1e4
-    if loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "make":
+    
+    if loop_ctx.strategy_cfg["exec_info"]["exec_type"] in ["make", "make2"]:
         info.loc["last_turnover(1e6)"] = last_turnover / 1e6
+        info.loc["half_spread_mean/close(bp)"] = half_spread_mean / last_inst_close_price * 1e4
     elif loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "take":
         info.loc["last_bid1_price"] = last_bid1_price
         info.loc["last_ask1_price"] = last_ask1_price
@@ -594,10 +659,12 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx) ->
         info.loc["last_ask1_volume"] = last_ask1_volume
         info.loc["last_bid1_turnover"] = last_bid1_price * last_bid1_volume
         info.loc["last_ask1_turnover"] = last_ask1_price * last_ask1_volume
-        vwap_slippage_mid = (
-            pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "vwap_slippage_mid").values[0] for inst in univ], index=univ).mul(1e4).rename("vwap_slippage_mid(bp)"))
+        vwap_slippage_mid = pd.Series(
+            [infra_sdk.deploy_read_last_alpha(task_time_s, inst, "vwap_slippage_mid").values[0] for inst in univ], index=univ).mul(1e4).rename("vwap_slippage_mid(bp)")
         info.loc["vwap_slippage_mid(bp)"] = vwap_slippage_mid
-        
+    else:
+        raise ValueError("unknown exec type")
+
     info.loc["last_var(1e-5)"] = last_std * last_std * 1e5
     # exchange_api = create_exchange_api(account.account_name)
     # real_qty_holding = pd.Series(exchange_api.query_position())
@@ -606,9 +673,12 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx) ->
     info.loc["real_equity"] = infra_sdk.deploy_read_equity(loop_ctx.account_name)
     for i, h in enumerate(loop_ctx.hist_row):
         info.loc[f"holding_stage{i}(%)"] = h.mul(100)
+
     info = info.round(3)
     tmp = info.copy()
-    LOGGER.info(tmp.round(3))
+    tmp.columns = [i.split("-")[1] for i in tmp.columns]
+
+    LOGGER.info(f"\n{tmp.round(3)}")
     LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
     LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
     info.to_csv(f"deploy/data/{loop_ctx.run_name}/{task_time_s}.csv")
@@ -624,7 +694,6 @@ def main():
     with open(args.config, "r") as f:
         cfg = json5.load(f)
         
-    add_model_legacy_path(str(pathlib.Path(__file__).parent))
     model_num = get_mdl_num(cfg)
     
     sanity_check(cfg, xhg, model_num)
@@ -640,11 +709,19 @@ def main():
         task_min_s = task_min_ts.strftime("%Y-%m-%d %H:%M:%S")
         opt_trade_date = get_trade_date(task_min_s, xhg, INDEX_INTERVAL)
 
-        if ts.second <= 35 or opt_trade_date is None:
+        if opt_trade_date is None or not is_trading_time(opt_trade_date, task_min_s):
             time.sleep(1)
         else:
-            loop_ctx = pred_run(cfg, xhg, model_num, task_min_s, opt_trade_date, loop_ctx)
+            try:
+                infra_sdk = create_infra_sdk(opt_trade_date, cfg)
+                loop_ctx = pred_run(cfg, xhg, model_num, task_min_s, opt_trade_date, loop_ctx, infra_sdk)
+            except Exception as e:
+                LOGGER.error(f"OPT ERROR:{e}, {traceback.format_exc()}")
+                dump_log(f"[OPT ERROR]", traceback.format_exc())
+            finally:
+                infra_sdk.close()
 
 
 if __name__ == '__main__':
+    add_model_legacy_path(str(pathlib.Path(__file__).parent))
     main()
