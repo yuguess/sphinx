@@ -1,23 +1,24 @@
 import time
-import json5
-import pandas as pd
-import pathlib
 import os
-import torch
-import psutil
-import numpy as np
+import pathlib
 import traceback
 from typing import List, Tuple, Optional
 from multiprocessing import Pool
+import torch
+import psutil
+import numpy as np
+import pandas as pd
+import json5
 
 from mona.common import INDEX_INTERVAL
-from mona.common import db, metadata
+from mona.common import metadata
 from mona.common.logging import get_logger
 from sphinx.util.exchange_api import get_env_exchange
 from sphinx.core.model import gen_model
 from .run_helper import parse_args, get_mdl_num, add_model_legacy_path, sanity_check, get_cn_rnd_up_min_ts, dump_log, gen_minute_encode_pred, decode_pred
 from .okx_5min_sdk import create_infra_sdk, SDKWrapper, is_trading_time
 from .okx_5min_opt import GenPortfolio
+
 
 LOGGER = get_logger('okx_10min')
 
@@ -106,7 +107,7 @@ class LoopCtx:
                 f'cp "{self.parent_cfg_path}" "deploy/data/{self.run_name}/config.json5"'
             )
             os.system(f'echo "{curr_nav}" > "deploy/data/{self.run_name}/nav.txt"')
-            LOGGER.info(f"run_name: {self.run_name}")
+            LOGGER.info("run_name: %s", self.run_name)
 
 
 def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper):
@@ -184,7 +185,7 @@ def do_minute_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper)
         "imbhl_r80",
         "imbhl_r160",
     ]
-    
+
     market_feature_name += [
         "imb_1bp",
         "imb_1bp_norm60",
@@ -322,7 +323,7 @@ def do_min_infer_wrapper(task_tm_s, cfg, univ, model_name, model_idx, trade_dt_s
     try:
         return do_minute_infer(task_tm_s, cfg, univ, model_name, model_idx, sdk)
     except Exception as e:
-        LOGGER.error(f"[{model_name} {model_idx} ERROR], {traceback.format_exc()}", )
+        LOGGER.error(f"[{model_name} {model_idx} ERROR], {traceback.format_exc()}")
         dump_log(f"[{model_name} {model_idx} ERROR], {e}", traceback.format_exc())
         return None
 
@@ -442,19 +443,19 @@ def do_minute_opt(
         return last_row
 
     except Exception as e:
-        LOGGER.error(f"OPT ERROR:{e}, {traceback.format_exc()}")
-        dump_log(f"[OPT ERROR]", traceback.format_exc())
+        LOGGER.error("OPT ERROR:%s, %s", str(e), str(traceback.format_exc()))
+        dump_log("[OPT ERROR] %s, %s", str(e), str(traceback.format_exc()))
         return None
 
 
 def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, infra_sdk: SDKWrapper) -> LoopCtx:
     current_process = psutil.Process()
     file_handles = current_process.open_files()
-    LOGGER.info(f"普通文件句柄数量: {len(file_handles)}")
+    LOGGER.info("普通文件句柄数量: %s", str(len(file_handles)))
 
     loop_ctx.try_reset(xhg, trade_dt_s, infra_sdk)
 
-    LOGGER.info(f"run trade date :{trade_dt_s}, task_min:{task_time_s}")
+    LOGGER.info("run trade date:%s, task_min:%s", trade_dt_s, task_time_s)
     if not infra_sdk.is_trading_time(task_time_s):
         return loop_ctx
 
@@ -577,50 +578,6 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     preds = [p.mul(1e4).rename(f"pred{i + 1}(bp)") for i, p in enumerate(fusion_preds)]
     prob_preds = [p.rename(f"prob_pred{i + 1}") for i, p in enumerate(fusion_prob_preds)]
     
-    # info = pd.concat([
-    #     sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
-    #     *[p.to_frame() for p in preds],
-    #     *[p.to_frame() for p in prob_preds],
-    #     last_ret1ms.to_frame(),
-    #     last_midret1ms.to_frame(),
-    #     vwap_slippage.to_frame(),
-    #     # vwap_slippage_mid.to_frame(),
-    #     ],axis=1).T
-    
-    # info.loc["limit_make"] = False
-    # info.loc["close_price"] = last_inst_close_price
-    # info.loc["real_holding(%)"] = loop_ctx.deploy_last_row.mul(100)
-    # info.loc["valid"] = last_valid & loop_ctx.valid_insts.eq(1)
-
-    # info.loc["fee(bp)"] = fee * 1e4
-    # if loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "make":
-    #     info.loc["last_turnover(1e6)"] = last_turnover / 1e6
-    # elif loop_ctx.strategy_cfg["exec_info"]["exec_type"] == "take":
-    #     info.loc["last_bid1_price"] = last_bid1_price
-    #     info.loc["last_ask1_price"] = last_ask1_price
-    #     info.loc["last_bid1_volume"] = last_bid1_volume
-    #     info.loc["last_ask1_volume"] = last_ask1_volume
-    #     info.loc["last_bid1_turnover"] = last_bid1_price * last_bid1_volume
-    #     info.loc["last_ask1_turnover"] = last_ask1_price * last_ask1_volume
-    #     vwap_slippage_mid = (
-    #         pd.Series([infra_sdk.deploy_read_last_alpha(task_time_s, inst, "vwap_slippage_mid").values[0] for inst in univ], index=univ).mul(1e4).rename("vwap_slippage_mid(bp)"))
-    #     info.loc["vwap_slippage_mid(bp)"] = vwap_slippage_mid
-        
-    # info.loc["last_var(1e-5)"] = last_std * last_std * 1e5
-    # # exchange_api = create_exchange_api(account.account_name)
-    # # real_qty_holding = pd.Series(exchange_api.query_position())
-    # # info.loc["real_qty_holding"] = real_qty_holding.reindex(info.columns).fillna(0)
-    # # info.loc["real_equity"] = exchange_api.query_account_information().margin_balance
-    # info.loc["real_equity"] = infra_sdk.deploy_read_equity(loop_ctx.account_name)
-    # for i, h in enumerate(loop_ctx.hist_row):
-    #     info.loc[f"holding_stage{i}(%)"] = h.mul(100)
-    # info = info.round(3)
-    # tmp = info.copy()
-    # LOGGER.info(f"\n:{tmp.round(3)}")
-    # LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
-    # LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
-    # info.to_csv(f"deploy/data/{loop_ctx.run_name}/{task_time_s}.csv")
-    
     info = pd.concat(
         [
             sum(fusion_row).rename("holding(%)").mul(100).to_frame(),
@@ -678,31 +635,29 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     tmp = info.copy()
     tmp.columns = [i.split("-")[1] for i in tmp.columns]
 
-    LOGGER.info(f"\n{tmp.round(3)}")
+    LOGGER.info("\n%s", str(tmp.round(3)))
     LOGGER.info(f"holding sum: {info.loc['real_holding(%)'].sum():.3f}%")
     LOGGER.info(f"holding abs sum: {info.loc['real_holding(%)'].abs().sum():.3f}%")
     info.to_csv(f"deploy/data/{loop_ctx.run_name}/{task_time_s}.csv")
-    LOGGER.info(f"task {task_time_s} done")
+    LOGGER.info("task %s done", task_time_s)
 
     return loop_ctx
 
 
 def main():
-    xhg = get_env_exchange()
-
     args = parse_args()
     with open(args.config, "r") as f:
         cfg = json5.load(f)
-        
+
     model_num = get_mdl_num(cfg)
-    
+    xhg = get_env_exchange()
     sanity_check(cfg, xhg, model_num)
-    
+
     task_min_s = get_cn_rnd_up_min_ts()
     trd_date_s = get_trade_date(task_min_s, xhg, INDEX_INTERVAL)
     sdk_cli = create_infra_sdk(trd_date_s, cfg)
     loop_ctx = LoopCtx(cfg["account"][0], args.config, args.prev_data_csv_path, sdk_cli)
-    
+
     while True:
         ts = pd.Timestamp.now(tz="Asia/Shanghai")
         task_min_ts = ts.floor("min") + pd.Timedelta(minutes=1)
