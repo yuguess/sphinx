@@ -1,5 +1,6 @@
 {
     universe: "universe_t60r30_oi_list30d_bnokxwithspot_binancefuture_futures",
+    feature_id: "bn5m",
     model: {
         path: "output_deploy/binance5m/universe_t60r30_oi_list30d_bnokxwithspot_binancefuture_futures_10m50m100m150m200m_5_20240831",
         epoch: 9,

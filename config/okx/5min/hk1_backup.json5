@@ -1,5 +1,6 @@
 {
     universe: "universe_t60r30_oi_list30d_bnokxwithspot_okx_futures",
+    feature_id: "okx5m",
     model: {
         path: "output_deploy/okx5m/universe_t60r30_oi_list30d_bnokxwithspot_okx_futures_10m50m100m150m200m_5_20240831",
         epoch: 9,

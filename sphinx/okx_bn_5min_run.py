@@ -1,11 +1,9 @@
 import time
-import os
 import pathlib
 import traceback
 from typing import List, Tuple, Optional
 from multiprocessing import Pool
-import torch
-import psutil
+
 import numpy as np
 import pandas as pd
 import json5
@@ -17,6 +15,7 @@ from sphinx.util.exchange_api import get_env_exchange
 from sphinx.core.model import gen_model
 from .run_helper import parse_args, get_mdl_num, add_model_legacy_path, sanity_check, get_cn_rnd_up_min_ts, dump_log, gen_minute_encode_pred, decode_pred
 from .run_helper import print_open_file, v0_min_infer
+from .run_helper import okx5m_inst_feature, okx_mkt_feature, bn5m_inst_feature, base_mkt_feature
 from .okx_5min_sdk import create_infra_sdk, SDKWrapper, is_trading_time
 from .okx_5min_opt import GenPortfolio
 from .run_adt import LoopCtx
@@ -66,10 +65,10 @@ def get_trade_date(time_str: str, xhg, idx_interval) -> Optional[str]:
         cnt += 1
 
 
-def do_min_infer_wrapper(task_tm_s, cfg, univ, model_name, model_idx, trade_dt_s) -> Optional[Tuple[List[pd.Series], List[pd.Series]]]:
+def do_min_infer_wrapper(task_tm_s, cfg, univ, model_name, model_idx, trade_dt_s, sym_ftrs, mkt_ftrs) -> Optional[Tuple[List[pd.Series], List[pd.Series]]]:
     sdk = create_infra_sdk(trade_dt_s, cfg)
     try:
-        return v0_min_infer(task_tm_s, cfg, univ, model_name, model_idx, sdk)
+        return v0_min_infer(task_tm_s, cfg, univ, model_name, model_idx, sdk, sym_ftrs, mkt_ftrs)
     except Exception as e:
         LOGGER.error(f"[{model_name} {model_idx} ERROR], {traceback.format_exc()}")
         dump_log(f"[{model_name} {model_idx} ERROR], {e}", traceback.format_exc())
@@ -196,6 +195,24 @@ def do_minute_opt(
         return None
 
 
+def get_inst_feature(feature_id: str) -> List[str]:
+    if feature_id == "okx5m":
+        return okx5m_inst_feature()
+    elif feature_id == "bn5m":
+        return bn5m_inst_feature()
+    else:
+        raise ValueError(f"unknown feature_id:{feature_id}")
+
+    
+def get_mkt_feature(feature_id: str) -> List[str]:
+    if feature_id == "okx5m":
+        return okx_mkt_feature()
+    elif feature_id == "bn5m":
+        return base_mkt_feature()
+    else:
+        raise ValueError(f"unknown feature_id:{feature_id}")
+
+
 def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, infra_sdk: SDKWrapper) -> LoopCtx:
     print_open_file()
     
@@ -210,7 +227,10 @@ def pred_run(cfg, xhg, model_num, task_time_s, trade_dt_s, loop_ctx: LoopCtx, in
     
     valid_univ = pd.Series(1, index=univ)
     
-    task_arg_tps = [(task_time_s, cfg, univ, 'model', mdl_idx, trade_dt_s) for mdl_idx in range(model_num)]
+    sym_features = get_inst_feature(cfg["feature_id"])
+    mkt_features = get_mkt_feature(cfg["feature_id"])
+    
+    task_arg_tps = [(task_time_s, cfg, univ, 'model', mdl_idx, trade_dt_s, sym_features, mkt_features) for mdl_idx in range(model_num)]
     with Pool(model_num) as p:
         ret = p.starmap(do_min_infer_wrapper, task_arg_tps)
     LOGGER.info("model infer done")

@@ -303,7 +303,7 @@ class GenPortfolio:
         if EXCHANGE in ["okx10m", "okx5m"]:
             # self.max_beta_exposure_sum = 0.05
             self.max_beta_exposure_sum = 0.5
-        elif EXCHANGE in ["binance10m"]:
+        elif EXCHANGE in ["binance10m", "binance5m"]:
             self.max_beta_exposure_sum = 0.5
         elif EXCHANGE in ["CF5m"]:
             self.max_beta_exposure_sum = 1.0
@@ -651,7 +651,7 @@ class GenPortfolio:
                         #     long_turnover_coef = 1 / (1 + np.exp(-probs[alpha_idx][i] / self.open_prob_thres[stage][alpha_idx]))
                         #     short_turnover_coef = 1 / (1 + np.exp(probs[alpha_idx][i] / self.open_prob_thres[stage][alpha_idx]))
                         # TODO：把 ret1m 的符号当做 to 的符号，考虑一下带方向的 to
-                        if EXCHANGE in ["okx10m", "binance10m", "okx5m"]:
+                        if EXCHANGE in ["okx10m", "binance5m", "okx5m"]:
                             oi_too_large_flag = abs(last_row[stage].values[i]) * self.nav > oi[i] * self.stage_oi_exposure
                             corr_too_low_flag = corr1[i] < self.abnormal_corr_ban_open_thres[stage][0] or corr2[i] < self.abnormal_corr_ban_open_thres[stage][1] or corr3[
                                 i] < self.abnormal_corr_ban_open_thres[stage][2]
@@ -1030,7 +1030,7 @@ class GenPortfolio:
                     valid = pd.DataFrame(True, columns=insts, index=today_index, dtype=bool)  # TODO: valid 怎么读？
 
                 std = pd.concat([read_alpha(date, inst, self.std_name).rename(inst) for inst in insts], axis=1)
-                if EXCHANGE in ["okx10m", "binance10m", "binance", "okx5m"]:
+                if EXCHANGE in ["okx10m", "binance5m", "binance", "okx5m"]:
                     # turnover_ma0 = pd.concat([read_alpha(date, inst, "turnover_r1").rename(inst) for inst in insts], axis=1)
                     # turnover_ma1 = pd.concat([read_alpha(date, inst, "turnover_r10").rename(inst) for inst in insts], axis=1)
                     # turnover_ma2 = pd.concat([read_alpha(date, inst, "turnover_r200").rename(inst) for inst in insts], axis=1)
