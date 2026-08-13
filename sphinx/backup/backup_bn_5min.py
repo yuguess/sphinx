@@ -22,7 +22,7 @@ from mona.common.logging import get_logger
 
 from sphinx.core.model import gen_model
 from sphinx.deprecated.main2 import GenPortfolio
-from .run_helper import parse_args, dump_log, check_load_mosek_license
+from ..run_helper import parse_args, dump_log, check_load_mosek_license
 
 
 LOGGER = get_logger('backup_bn_5min')
