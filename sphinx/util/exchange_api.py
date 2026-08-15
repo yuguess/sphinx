@@ -8,7 +8,7 @@ from typing import Any
 
 from mona.common.util import dbtool
 from mona.common import IS_CS_STORAGE, db, metadata
-from .runtime_config import CF_EXCHANGE, FREQ_1H, FREQ_1S, FREQ_5MIN, OKX_EXCHANGE, get_env_exchange, get_env_freq
+from .runtime_config import CF_EXCHANGE, FREQ_1H, FREQ_1S, FREQ_5MIN, OKX_EXCHANGE, get_env_exchange, get_env_freq, BINANCE5M
 from .runtime_config import require_runtime_config
 
 
@@ -33,7 +33,7 @@ def get_dates(start_date: str, end_date: str) -> list[str]:
     if exchange == CF_EXCHANGE:
         dates = db.dates(f"source/meta/{CF_DEFAULT_UNIVERSE}")
         return [date for date in dates if start_date <= date <= end_date]
-    elif exchange == OKX_EXCHANGE:
+    elif exchange == OKX_EXCHANGE or exchange == BINANCE5M:
         return metadata.dates(start_date, end_date)
     else:
         raise ValueError(f"unsupported runtime EXCHANGE={exchange!r}")
@@ -45,7 +45,7 @@ def get_index(date: str) -> pd.Index:
     freq = get_env_freq()
     if exchange == CF_EXCHANGE:
         return db.read(date, f"{get_env_freq()}/source/kline/close").index
-    elif exchange == OKX_EXCHANGE:
+    elif exchange == OKX_EXCHANGE or exchange == BINANCE5M:
         if freq == FREQ_5MIN:
             return metadata.index(date)
         elif freq == FREQ_1S:
@@ -67,6 +67,8 @@ def sample_per_date(date: str | None = None) -> int:
         return len(get_index(date))
 
     if exchange == OKX_EXCHANGE and freq == FREQ_5MIN:
+        return 288
+    elif exchange == BINANCE5M:
         return 288
     elif exchange == OKX_EXCHANGE and freq == FREQ_1S:
         return 86400
@@ -93,6 +95,8 @@ def read_universe(date: str, univ_name: str) -> pd.Series:
     """读取指定交易日的 universe。"""
     exchange = get_env_exchange()
     if exchange == OKX_EXCHANGE:
+        univ = _read_meta_wide(date, univ_name).squeeze()
+    elif exchange == BINANCE5M:
         univ = _read_meta_wide(date, univ_name).squeeze()
     elif exchange == CF_EXCHANGE:
         univ = db.read(date, f"source/meta/{univ_name}").squeeze()

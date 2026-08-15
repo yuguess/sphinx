@@ -9,6 +9,7 @@ from typing import Any, Mapping
 # RUNTIME_ENV_KEYS = ["EXCHANGE", "FREQ", "MARKET", "DATA_ROOT", "DEPLOY_MODE", "USE_MP_CACHE", "ENV_FILE"]
 CF_EXCHANGE = "CF"
 OKX_EXCHANGE = "okx"
+BINANCE5M = "binance5m"
 FREQ_5MIN = "5min"
 FREQ_1S = "1s"
 FREQ_1H = "1h"
@@ -38,6 +39,8 @@ def require_runtime_config(runtime: Mapping[str, Any], label: str = "runtime", e
         if freq not in SUPPORTED_FREQS:
             raise error_type(f"{label}.FREQ must be one of {sorted(SUPPORTED_FREQS)!r}, got {freq!r}")
         require_runtime_value(runtime, "MARKET", OKX_MARKET, label, error_type)
+    elif exchange == BINANCE5M:
+        pass
     elif exchange == CF_EXCHANGE:
         require_runtime_value(runtime, "FREQ", FREQ_5MIN, label, error_type)
         require_runtime_value(runtime, "MARKET", CF_MARKET, label, error_type)

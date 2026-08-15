@@ -1,9 +1,9 @@
 import os
 import traceback
+
 import numpy as np
 import pandas as pd
 import torch
-# from IPython import embed
 from torch.utils.data import Dataset
 from multiprocessing import Pool
 
@@ -12,10 +12,7 @@ from sphinx.util.exchange_api import get_env_freq, get_dates, get_index, read_un
 from sphinx.util.runtime_config import FREQ_1H, FREQ_1S, FREQ_5MIN
 
 
-# POOL_NUM = 1
 POOL_NUM = int(os.environ.get("STRATEGY_DL_POOL_NUM", "200"))
-# POOL_NUM = 24
-# POOL_NUM = 48
 
 
 def read_data(preifx, inst, start_date, end_date, label_name, sub_label_name, alphas):
@@ -227,6 +224,7 @@ class FeatureBase(Dataset):
         # valid[-seq_len * step_size:] = False
         all_time_index = pd.concat([get_index(date).to_series().reset_index(drop=True) for date in dates], axis=1).T
         # all_time_index = pd.concat([get_index(date).to_series() for date in dates], axis=1).T
+
         self.valids = pd.Series(valid, index=all_time_index.values.flatten())
         self.valid_idxs = np.where(self.valids)[0]
         self.sample_weight_decay_coef = sample_weight_decay_coef
