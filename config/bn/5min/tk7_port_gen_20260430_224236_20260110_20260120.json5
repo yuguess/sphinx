@@ -1,0 +1,99 @@
+{
+    start_date: "2025-02-01",
+    end_date: "2026-03-31",
+    nav: 4000e4,
+    fee: 4e-4,
+    univ_name: "universe_t60r30_oi_list30d_bnokxwithspot_binancefuture_futures",
+    alpha_name: [
+        "bn5min_tk7_20260430_224236_10m"
+    ],
+    prob_name: [
+        "bn5min_tk7_20260430_224236_10m_prob"
+    ],
+    out_name: "bn5min_tk7_20260430_224236_10m_holding_20260110_20260120",
+    std_name: "std_r320",
+    strategy: {
+        params: {
+            max_beta_exposure: [
+                0.13,
+                0.4,
+                0.08,
+                0.45,
+                0.41,
+                0.45
+            ],
+            signal_coef: [
+                [
+                    [0.36],
+                    [0.04],
+                    [1.12],
+                    [0.06],
+                    [0.38],
+                    [0.63]
+                ]
+            ],
+            inst_risk_coef: [
+                [1.26],
+                [0.67],
+                [0.03],
+                [1.57],
+                [0.14],
+                [0.26]
+            ],
+            open_cost_coef: [
+                [
+                    [0.04],
+                    [2.74],
+                    [0.57],
+                    [0.03],
+                    [6.95],
+                    [0.42]
+                ]
+            ],
+            close_cost_coef: [
+                [
+                    [0.03],
+                    [-0.58],
+                    [-1.3],
+                    [0.02],
+                    [-1.3],
+                    [-0.66]
+                ]
+            ],
+            max_open_turnover: [
+                0.0014,
+                0.0443,
+                0.001,
+                0.0007,
+                0.0111,
+                0.0024
+            ],
+            max_close_turnover: [
+                0.0002,
+                0.0025,
+                0.0009,
+                0.0003,
+                0.0048,
+                0.0029
+            ],
+            abnormal_turnver_ban_open_beta: [4.9],
+            abnormal_corr_ban_open_thres: [
+                [0.0, -0.01, 0.07],
+                [-0.01, 0.27, 0.35],
+                [0.1, 0.12, 0.24],
+                [0.01, -0.06, 0.1],
+                [-0.02, 0.08, 0.06],
+                [-0.01, 0.06, 0.12]
+            ],
+            req_margin: 0.33,
+            funding_fee_coef: 0.07,
+            exec_info: {
+                exec_type: "make2",
+                turnover_limit_rate: 0.03,
+                book_limit_rate: 0.1
+            },
+            signal_horizon: [1],
+            max_inst_exposure: 0.12
+        }
+    }
+}
