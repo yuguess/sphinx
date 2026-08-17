@@ -1,4 +1,5 @@
 mosek.lic
+*.png
 
 data_root
 output

@@ -13,6 +13,8 @@ from sphinx.util.exchange_api import get_dates, prev_date, read_alpha, read_base
 EPS = 1e-5
     
 def read_data(date, config):
+    print(date)
+    
     holding = read_holding(date, config["univ_name"], config["out_name"])
     today_universe = holding.columns
     

@@ -8,11 +8,12 @@ from typing import List, Dict, Tuple
 import numpy as np
 import pandas as pd
 
-from sphinx.util.exchange_api import get_env_exchange, today_all_inst, get_dates, read_universe, prev_date, next_date, read_alpha
-from sphinx.util.exchange_api import read_basedata
+from sphinx.util.cf_exchange_api import get_dates, today_all_inst, read_universe, prev_date, next_date, read_alpha, read_basedata
 from sphinx.util.path_utils import deep_data_root
+from sphinx.util.runtime_config import get_env_exchange
 from sphinx.base_adt import SymS, DateS_L
 from mona.common.logging import get_logger
+
 
 SymDatesTp = Tuple[SymS, DateS_L]
 SymDatesTp_L = List[SymDatesTp]
@@ -28,11 +29,6 @@ alpha_lists = {
         "ret40m",
         "ret80m",
         "ret160m",
-        # "midret1m",
-        # "midret10m",
-        # "midret40m",
-        # "midret80m",
-        # "midret160m",
         "twret1m",
         "twret10m",
         "twret40m",
@@ -64,6 +60,17 @@ alpha_lists = {
         "imbhl_r40",
         "imbhl_r80",
         "imbhl_r160",
+        
+        "midret1m",
+        "midret10m",
+        "midret40m",
+        "midret80m",
+        "midret160m",
+        
+        "imb_d1_r1",
+        "imb_d1_r10",
+        "imb_d1_r40",
+        "imb_d1_r160",
     ],
     "ret1m": ["ret1m"],
     "empty": [],
@@ -209,22 +216,11 @@ def gen_data(data: SymDatesTp, xhg, args, deep_data_dir, alphas):
         for alpha in alphas:
             gen_alpha(alpha, dates, inst, valid, dataset_prefix)
 
-        if xhg != "CF" and xhg != "coinbase":
-            market_name = f"market_{args.universe}"
-            market_ret1m = pd.concat([read_alpha(date, market_name, "ret1m") for date in dates], axis=0)[valid]
-            assert (~np.isfinite(market_ret1m)).sum() == 0
-            market_ret1m.rename(market_name).to_frame().to_pickle(f"{dataset_prefix}/feature/{market_name}_ret1m.pkl.zip")
-
-            for market_feature_name in market_alphas:
-                market_feature = pd.concat([read_alpha(date, market_name, market_feature_name) for date in dates], axis=0)[valid]
-                assert (~np.isfinite(market_feature)).sum() == 0
-                market_feature.rename(market_feature_name).to_frame().to_pickle(f"{dataset_prefix}/feature/{market_name}_{market_feature_name}.pkl.zip")
-
         samples = (label_vwreturn.notna() & rtn_vola.gt(0)).sum()
         LG.info(f"DONE {inst}: {dates[0]} to {dates[-1]}, {len(dates)} days, {samples} samples")
         return samples
     except Exception as e:
-        LG.info(f"=== ERROR {inst}: {e}", traceback.format_exc())
+        LG.info(f"=== ERROR {inst}: {e} {traceback.format_exc()}")
         return 0
 
 
@@ -257,7 +253,7 @@ def build_up_inst_dates(all_inst_list, bg_date_s, ed_date_s, univ, xhg) -> Dict[
     prev_all_inst_list = [[]] + all_inst_list[:-1]
     next_all_inst_list = all_inst_list[1:] + [[]]
     for date_idx, date in enumerate(get_dates(bg_date_s, ed_date_s)):
-        universe = read_universe(date, univ).index
+        universe = read_universe(date, univ)
         pdate = prev_date(date)
         ppdate = prev_date(pdate)
         ndate = next_date(date)

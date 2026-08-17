@@ -18,7 +18,7 @@ def require_supported_runtime() -> None:
     )
 
 def data_namespace_parts() -> tuple[str, str]:
-    require_supported_runtime()
+    # require_supported_runtime()
     return get_env_exchange(), get_env_freq()
 
 

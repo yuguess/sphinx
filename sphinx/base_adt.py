@@ -2,8 +2,14 @@ from typing import List
 
 AlphaS = str
 
-SymS = str
+# universe id string, like T30R20, T55R1
+UnivS = str
 
+# string format symbol
+SymS = str
+SymS_L = List[SymS]
+
+# date string format like yyyy-mm-dd
 DateS = str
 DateS_L = List[DateS]
 

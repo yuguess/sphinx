@@ -30,10 +30,7 @@ def get_dates(start_date: str, end_date: str) -> list[str]:
     """返回闭区间内的交易日字符串。"""
     assert_supported_runtime()
     exchange = get_env_exchange()
-    if exchange == CF_EXCHANGE:
-        dates = db.dates(f"source/meta/{CF_DEFAULT_UNIVERSE}")
-        return [date for date in dates if start_date <= date <= end_date]
-    elif exchange == OKX_EXCHANGE or exchange == BINANCE5M:
+    if exchange == OKX_EXCHANGE or exchange == BINANCE5M:
         return metadata.dates(start_date, end_date)
     else:
         raise ValueError(f"unsupported runtime EXCHANGE={exchange!r}")
