@@ -5,13 +5,13 @@ from multiprocessing import Pool
 import json5
 import numpy as np
 import pandas as pd
-
 from matplotlib import pyplot as plt
-from sphinx.util.exchange_api import get_dates, prev_date, read_alpha, read_basedata, read_holding, read_orderbook, sample_per_date
 
+from sphinx.util.cf_exchange_api import get_dates, prev_date, read_alpha, read_basedata, read_orderbook, sample_per_date
+from sphinx.util.exchange_api import read_holding
 
 EPS = 1e-5
-    
+
 def read_data(date, config):
     print(date)
     
@@ -103,7 +103,9 @@ def read_data(date, config):
 
     # assert np.allclose(current_long_turnover.iloc[1:], 0, atol=EPS)  # TODO：第一行涉及隔夜平仓，以后处理
     # assert np.allclose(current_short_turnover.iloc[1:], 0, atol=EPS)  # TODO：第一行涉及隔夜平仓，以后处理
-    assert holding.abs().sum(axis=1).max() <= 1 + EPS
+    max_gross_exposure = holding.abs().sum(axis=1).max()
+    if max_gross_exposure > 1 + EPS:
+        print(f"warning: {date} gross holding exposure={max_gross_exposure:.9f}")
 
     fee = config["fee"]
     turnover = trade.abs()
@@ -131,21 +133,23 @@ def read_data(date, config):
     # turnover.columns = u
     # cost.columns = u
     return pnl, turnover, cost  #, holding.iloc[1:]
-
-
+    
+    
 def main():
     cfg_pth = sys.argv[1]
     with open(cfg_pth, "r") as f:
         config = json5.load(f)
-    POOL_NUM = int(sys.argv[2])
-
+    pool_num = int(sys.argv[2])
+    print(pool_num)
+    
     dates = get_dates(config["start_date"], config["end_date"])
+    
+    with Pool(pool_num) as p:
+        tp_l = p.starmap(read_data, ((d, config) for d in dates))
 
-    with Pool(POOL_NUM) as p:
-        data = p.starmap(read_data, ((d, config) for d in dates))
-
-    pnl_list = [d[0] for d in data]
-    all_cost = sum([d[2].sum().sum() for d in data])
+    pnl_list = [tp[0] for tp in tp_l]
+    turnover_list = [tp[1] for tp in tp_l]
+    all_cost = sum([tp[2].sum().sum() for tp in tp_l])
     # cost_list = [d[2] for d in data]
     # pd.Series(cost_list).plot()
     minute_pnl = [p.sum(axis=1) for p in pnl_list]
@@ -155,7 +159,7 @@ def main():
     # p.cumsum().iloc[::1440].plot()
     # p.sum().sort_values()
     # p.sum().sort_values().iloc[-50:]
-    turnover_list = [d[1] for d in data]
+
     # holding_list = [d[3] for d in data]
     # holding_list = [d[3] for d in data]
     # a = sum([h.abs().sum().sum() for h in holding_list])

@@ -8,7 +8,7 @@ import pathlib
 from tqdm import tqdm
 
 from mona.common.logging import get_logger
-from sphinx.util.exchange_api import get_dates, get_index, prev_date, read_universe, sample_per_date
+from sphinx.util.cf_exchange_api import get_dates, get_index, prev_date, read_universe, sample_per_date
 from sphinx.core.model import gen_model
 from sphinx.core.dataset import gen_dataset
 from sphinx.run_helper import add_model_legacy_path

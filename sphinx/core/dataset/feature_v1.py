@@ -8,11 +8,15 @@ from torch.utils.data import Dataset
 from multiprocessing import Pool
 
 from sphinx.util.path_utils import deep_data_root
-from sphinx.util.exchange_api import get_env_freq, get_dates, get_index, read_universe, sample_per_date
-from sphinx.util.runtime_config import FREQ_1H, FREQ_1S, FREQ_5MIN
+from sphinx.util.runtime_config import FREQ_1H, FREQ_1S, FREQ_5MIN, get_env_exchange
+
+if get_env_exchange() in ["CF", "CF5m"]:
+    from sphinx.util.cf_exchange_api import get_env_freq, get_dates, get_index, read_universe, sample_per_date
+else:
+    from sphinx.util.exchange_api import get_env_freq, get_dates, get_index, read_universe, sample_per_date
 
 
-POOL_NUM = int(os.environ.get("STRATEGY_DL_POOL_NUM", "200"))
+POOL_NUM = int(os.environ.get("STRATEGY_DL_POOL_NUM", "100"))
 
 
 def read_data(preifx, inst, start_date, end_date, label_name, sub_label_name, alphas):

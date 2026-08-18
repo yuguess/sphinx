@@ -1,4 +1,5 @@
 from typing import List 
+import pandas as pd
 
 AlphaS = str
 
@@ -14,3 +15,7 @@ DateS = str
 DateS_L = List[DateS]
 
 Strs = List[str]
+
+
+# column is univ, index is time index in FREQ
+PanelDF = pd.DataFrame

@@ -4,7 +4,8 @@ import pandas as pd
 from argparse import ArgumentParser
 from traceback import print_exc
 
-from sphinx.util.exchange_api import get_dates, read_universe, write_signal
+from sphinx.util.cf_exchange_api import get_dates, read_universe
+from sphinx.util.exchange_api import write_signal
 
 
 def parse_args():
