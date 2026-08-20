@@ -86,6 +86,7 @@ def main():
         today_index = get_index(date)
         preds = [pd.DataFrame(index=today_index, columns=universe.index, dtype=np.float64) for _ in range(out_channels)]
         probs = [pd.DataFrame(index=today_index, columns=universe.index, dtype=np.float64) for _ in range(out_channels)]
+        
         label = [pd.DataFrame(index=today_index, columns=universe.index, dtype=np.float64) for _ in range(out_channels)]
         volas = [pd.DataFrame(index=today_index, columns=universe.index, dtype=np.float64) for _ in range(out_channels)]
         
@@ -100,6 +101,8 @@ def main():
 
             y_true = y_true[..., receptive_field:].numpy().reshape(len(universe.index), out_channels, seq_len - receptive_field)
             vola = vola[..., receptive_field:].numpy().reshape(len(universe.index), out_channels, seq_len - receptive_field)
+            
+            # decode_out symbol X channel X sample_index
             decode_out = test_dataset.decode(out, vola, 1) * args.rescale
             decode_out_prob = out_prob * 2 - 1
 

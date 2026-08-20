@@ -27,7 +27,6 @@ from sphinx.core.utils import AverageMeter, Logger, get_channel_corr, get_corr, 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
 
-
 class CustomWeightedRandomSampler(torch.utils.data.WeightedRandomSampler):
     """WeightedRandomSampler that supports large sample pools."""
 
@@ -237,6 +236,7 @@ def main():
     kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=36000))
     accelerator = Accelerator(kwargs_handlers=[kwargs])
     # accelerator = Accelerator()
+
     args = parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     version = args.version
@@ -246,11 +246,14 @@ def main():
         pass
     else:
         raise ValueError("unexpected version state")
+
     with open(args.config, "r") as f:
         config = json5.load(f)
+
     enable_shuffle = args.shuffle
     if enable_shuffle:
         config["output_dir"] += "_shuffle"
+
     output_dir = os.path.join(config["output_dir"], str(version))
     output_parts = output_dir.split("/")
     assert output_parts[0] in ["output"]
@@ -317,6 +320,7 @@ def main():
     if not enable_shuffle:
         downsample = config["train_dataset"]["downsample"]
         config["train_dataset"]["downsample"] = 1
+
         if accelerator.is_main_process:
             train_cache_ok = os.path.exists(f"{tmp_dataset_dir}/train.ok")
             if train_cache_ok:
@@ -325,11 +329,10 @@ def main():
                         cached_train_dataset = pickle.load(f)
                     expected_decay = config["train_dataset"].get("sample_weight_decay_coef", 1)
                     train_cache_ok = (
-                        hasattr(cached_train_dataset, "sample_weight")
-                        and getattr(cached_train_dataset, "sample_weight_decay_coef", 1) == expected_decay
-                    )
+                        hasattr(cached_train_dataset, "sample_weight") and getattr(cached_train_dataset, "sample_weight_decay_coef", 1) == expected_decay)
                 except Exception:
                     train_cache_ok = False
+
             if not train_cache_ok:
                 train_dataset = gen_dataset(**{
                     **config["dataset"],
@@ -339,6 +342,7 @@ def main():
                     pickle.dump(train_dataset, f)
                 with open(f"{tmp_dataset_dir}/train.ok", "w") as f:
                     f.write("ok")
+
         accelerator.wait_for_everyone()
         with open(f"{tmp_dataset_dir}/train.pkl", "rb") as f:
             train_dataset = pickle.load(f)
@@ -373,10 +377,10 @@ def main():
                 pickle.dump(val_dataset, f)
             with open(f"{tmp_dataset_dir}/val.ok", "w") as f:
                 f.write("ok")
+
     accelerator.wait_for_everyone()
     with open(f"{tmp_dataset_dir}/val.pkl", "rb") as f:
         val_dataset = pickle.load(f)
-
     val_loader = torch.utils.data.DataLoader(val_dataset, **{
         **config["data_loader"],
         **config["val_loader"],
@@ -399,7 +403,6 @@ def main():
     accelerator.wait_for_everyone()
     with open(f"{tmp_dataset_dir}/test.pkl", "rb") as f:
         test_dataset = pickle.load(f)
-
     test_loader = torch.utils.data.DataLoader(test_dataset, **{
         **config["data_loader"],
         **config["val_loader"],
@@ -431,6 +434,7 @@ def main():
             test_loader.dataset.set_shuffle_idx(epoch)
         else:
             raise ValueError(f"unexpected shuffle state: {enable_shuffle}")
+        
         logger.log(f"Validation_{epoch}------------------------------------------")
         with torch.no_grad():
             model.eval()

@@ -32,5 +32,4 @@ def config_dir() -> Path:
 
 
 def deep_data_root() -> Path:
-    # return Path(os.environ.get("STRATEGY_DL_DATA_ROOT", DEFAULT_DEEP_DATA_ROOT)) / "deep" / data_namespace()
     return Path(STRATEGY_DL_DATA_ROOT) / "deep" / data_namespace()

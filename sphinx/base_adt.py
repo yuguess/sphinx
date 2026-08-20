@@ -17,5 +17,6 @@ DateS_L = List[DateS]
 Strs = List[str]
 
 
+DF = pd.DataFrame
 # column is univ, index is time index in FREQ
 PanelDF = pd.DataFrame

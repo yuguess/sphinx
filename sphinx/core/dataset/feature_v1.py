@@ -6,9 +6,11 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from multiprocessing import Pool
+from typing import Tuple
 
 from sphinx.util.path_utils import deep_data_root
 from sphinx.util.runtime_config import FREQ_1H, FREQ_1S, FREQ_5MIN, get_env_exchange
+from sphinx.base_adt import DF
 
 if get_env_exchange() in ["CF", "CF5m"]:
     from sphinx.util.cf_exchange_api import get_env_freq, get_dates, get_index, read_universe, sample_per_date
@@ -17,18 +19,21 @@ else:
 
 
 POOL_NUM = int(os.environ.get("STRATEGY_DL_POOL_NUM", "100"))
+VOLA_THRES = 5e-5
 
 
-def read_data(preifx, inst, start_date, end_date, label_name, sub_label_name, alphas):
+def read_data(preifx, inst, start_date, end_date, label_names, sub_label_name, alphas) -> Tuple[str, DF, DF, DF, DF]:
     st_idx = get_index(start_date)[0]
     ed_idx = get_index(end_date)[-1]
-    labels = [pd.read_pickle(f"{preifx}/{inst}/label/{l}.pkl.zip") for l in label_name]
+    
+    labels = [pd.read_pickle(f"{preifx}/{inst}/label/{l}.pkl.zip") for l in label_names]
+    
     all_index = labels[0].index
-    for l in labels:
-        assert l.index.equals(all_index)
+    assert all([l.index.equals(all_index) for l in labels])
+
     valid_index = (labels[0].index >= st_idx) & (labels[0].index <= ed_idx)
     labels = [l.loc[valid_index].astype(np.float32) for l in labels]
-    vola_name = [f"vola{''.join([i for i in l if i.isdigit()])}m" for l in label_name]
+    vola_name = [f"vola{''.join([i for i in l if i.isdigit()])}m" for l in label_names]
     # vola_name = [f"vola30m" for l in label_name]
     if len(labels[0]) > 0:
         if sub_label_name is not None:
@@ -41,19 +46,22 @@ def read_data(preifx, inst, start_date, end_date, label_name, sub_label_name, al
             # else:
             assert sub_label_name == "prev"
             # assert len(labels) == 2
-            for i in range(len(label_name) - 1, 0, -1):
+            for i in range(len(label_names) - 1, 0, -1):
                 labels[i] = labels[i] - labels[i - 1].values
                 # labels.append(labels[i] - labels[i - 1].values)
                 # vola_name.append(vola_name[i])
+
         volas = []
         for l in vola_name:
             volas.append(pd.read_pickle(f"{preifx}/{inst}/label/{l}.pkl.zip").loc[valid_index].astype(np.float32))
+
         features = []
         for alpha in alphas:
             # print(pd.read_pickle(f"{preifx}/{inst}/feature/{alpha}.pkl.zip").index)
             # print(pd.read_pickle(f"{preifx}/{inst}/feature/{alpha}.pkl.zip").loc[valid_index].index)
             features.append(pd.read_pickle(f"{preifx}/{inst}/feature/{alpha}.pkl.zip").loc[valid_index].astype(np.float32))
             # features.append(pd.read_pickle(f"{preifx}/{inst}/feature/{alpha}.pkl.zip").iloc[valid_st_idx:valid_ed_idx].astype(np.float32))
+
         turnover = pd.read_pickle(f"{preifx}/{inst}/label/turnover.pkl.zip").loc[valid_index].astype(np.float32)
         # print("Read data:", inst, len(labels[0]), len(features[0]), len(turnover))
         # for f in features:
@@ -66,7 +74,8 @@ def read_data(preifx, inst, start_date, end_date, label_name, sub_label_name, al
         # print(features.index)
         features.index = labels.index
         return inst, labels, volas, features, turnover
-    return None
+
+    raise ValueError("label data doesn't exist")
 
 
 class StdNorm:
@@ -105,8 +114,6 @@ class StdNorm:
             std = torch.tensor(std, device=df.device)
         return df * std
 
-
-VOLA_THRES = 5e-5
 
 
 def merge_data(inst_name, features, turnovers, org_labels, volas, use_vola, sample_per_date, date_symbols, all_time_index):
@@ -163,14 +170,12 @@ class FeatureBase(Dataset):
     ):
         super().__init__()
         assert alphas[0] == "ret1m"
+        
         dates = get_dates(start_date, end_date)
         start_date = dates[0]
         end_date = dates[-1]
-        labels = {}
-        volas = {}
-        features = {}
-        turnovers = {}
         path_prefix = str(deep_data_root() / universe)
+
         if insts is None:
             insts = [i for i in os.listdir(path_prefix)]
         if len(insts) == 1:
@@ -182,27 +187,34 @@ class FeatureBase(Dataset):
         else:
             raise ValueError("insts should not be empty")
 
+        labels = {}
+        volas = {}
+        features = {}
+        turnovers = {}
         for inst, label, vola, feature, turnover in ret:
             labels[inst] = label
             volas[inst] = vola
             features[inst] = feature
             turnovers[inst] = turnover
-        self.insts = sorted(labels.keys())
 
+        self.insts = sorted(labels.keys())
         self.seq_len = seq_len
         self.sample_per_date_val = sample_per_date()
         # assert seq_len < self.sample_per_date_val  # get item 往后取一天，避免数据不足
         # self.step_size = step_size
         self.dates = dates
+        
         self.universe = [read_universe(date, universe) for date in dates]
         self.universe_len = len(self.universe[-1])
         for ui, u in enumerate(self.universe):
             if len(u) != self.universe_len:
                 print(f"[WARN] universe not equal: {dates[ui]}, {len(u)} vs {self.universe_len}")
+                
         date_symbols = pd.concat([pd.Series(1.0, u.index) for u in self.universe], axis=1).T.fillna(0)
         date_symbols.index = pd.DatetimeIndex(dates)
         tmp = date_symbols.copy()
         date_symbols = date_symbols.astype(bool)
+
         # 1h 的 seq_len=1024 需要往前覆盖约 43 天，避免新入池合约 lookback 不足。
         for i in range(44):
             date_symbols = date_symbols | tmp.shift(-i).fillna(0).astype(bool)
@@ -212,7 +224,9 @@ class FeatureBase(Dataset):
         # date_symbols = date_symbols | tmp.shift(1).fillna(0).astype(bool)
         # if inst_list_only:
         #     return
+
         self.alphas = alphas
+        
         valid = np.zeros((len(dates) * self.sample_per_date_val,), dtype=bool)
         if jump_step > 1:
             assert downsample == 1, f"downsample should be 1 instead of {downsample} when jump_step > 1"
@@ -228,9 +242,9 @@ class FeatureBase(Dataset):
         # valid[-seq_len * step_size:] = False
         all_time_index = pd.concat([get_index(date).to_series().reset_index(drop=True) for date in dates], axis=1).T
         # all_time_index = pd.concat([get_index(date).to_series() for date in dates], axis=1).T
-
         self.valids = pd.Series(valid, index=all_time_index.values.flatten())
         self.valid_idxs = np.where(self.valids)[0]
+        
         self.sample_weight_decay_coef = sample_weight_decay_coef
         self.sample_weight = self.valids[self.valids].index.year - pd.to_datetime(start_date).year
         self.sample_weight = [1 / sample_weight_decay_coef**k for k in self.sample_weight]
@@ -257,7 +271,7 @@ class FeatureBase(Dataset):
             self.turnovers[inst_name].append(turnovers[inst])
 
         self.inst_names = list(self.org_labels.keys())
-        # embed()
+
         with Pool(POOL_NUM) as p:
             ret = p.starmap(merge_data, [(
                 inst_name,
@@ -270,12 +284,14 @@ class FeatureBase(Dataset):
                 date_symbols[inst_name],
                 all_time_index,
             ) for inst_name in self.inst_names])
+
         for inst_name, features, org_labels, labels, volas, turnovers in ret:
             self.features[inst_name] = features
             self.org_labels[inst_name] = org_labels
             self.labels[inst_name] = labels
             self.volas[inst_name] = volas
             self.turnovers[inst_name] = turnovers
+
         if normalizer is None:
             self.normalizer = {
                 # invalid 的点都是 nan，不参与计算
@@ -287,6 +303,7 @@ class FeatureBase(Dataset):
             self.normalizer = normalizer
         else:
             raise ValueError("unexpected normalizer state")
+
         assert len(self.normalizer["feature"].std) == len(self.alphas)
         assert len(self.normalizer["label"].std) == len(label_name)
         assert len(self.normalizer["org_label"].std) == len(label_name)
@@ -345,6 +362,7 @@ class FeatureBase(Dataset):
         org_y = []
         vola = []
         weight = []
+
         # 选出来的就应该是 univ，与 test.py 配合
         for inst in universe:
             x.append(self.norm_features[inst].loc[item_index_st:item_index_ed].fillna(0).values)
@@ -369,7 +387,9 @@ class FeatureBase(Dataset):
         # for xx in x:
         #     print(xx.shape)
         # print("===")
-        x = torch.tensor(np.stack(x), dtype=torch.float32).permute(0, 2, 1)  # N, C, T
+
+        # N, #F, T
+        x = torch.tensor(np.stack(x), dtype=torch.float32).permute(0, 2, 1)  
         y = torch.tensor(np.stack(y), dtype=torch.float32).permute(0, 2, 1)
         y_true = torch.tensor(np.stack(y_true), dtype=torch.float32).permute(0, 2, 1)
         org_y = torch.tensor(np.stack(org_y), dtype=torch.float32).permute(0, 2, 1)
@@ -387,6 +407,7 @@ class FeatureBase(Dataset):
             invalid_ratio = y_true.nan_to_num(0).eq(0).float().mean(dim=0)
         else:
             raise ValueError(f"unsupported FREQ={freq!r}")
+
         flag = invalid_ratio.ge(0.8).float().mean(dim=-1).ge(0.8).any()
         if flag:
             print(f"err date: {self.dates[date_idx_ed]}, idx: {org_idx}, err ratio: {invalid_ratio.flatten().float().mean()}, time: {item_index_st}")
@@ -394,7 +415,6 @@ class FeatureBase(Dataset):
                 return self.__getitem__((org_idx + self.sample_per_date_val) % len(self))
             elif debug:
                 pass
-                # embed()
             else:
                 raise ValueError(f"invalid sample at {self.dates[date_idx_ed]}, idx: {org_idx}, time: {item_index_st}")
 

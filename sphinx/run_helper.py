@@ -253,7 +253,7 @@ def v0_min_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper, in
     for inst_feature in history_inst_self_feature_list:
         history_inst_feature_list.append(pd.concat([inst_feature, history_market_feature], axis=1)[all_feature_name_list].values.T)
 
-    # B = 20, C = 18, T = 1439
+    # Universe X Feature X T(1023)
     history_inst_feature = np.array(history_inst_feature_list)
      # 第一个 feature 必须是 ret1m！
     history_inst_ret1m = history_inst_feature[:, 0:1, :] 
@@ -300,9 +300,9 @@ def v0_min_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper, in
             probs[c].append(prob)
     # hist_df = pd.DataFrame(preds, index=history_index[-(model.seq_len - 1):], columns=universe)
 
-    LOGGER.info("block on last data ready")
+    LOGGER.info("ready to block on reading lastest data")
 
-    # 读最新数据, B = 20, C = 18, T = 1
+    # 读最新数据
     read_last_st = time.time()
     last_inst_self_feature_list = []
     for inst in univ:
@@ -318,7 +318,7 @@ def v0_min_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper, in
     for inst_feature in last_inst_self_feature_list:
         last_inst_feature.append(pd.concat([inst_feature, last_market_feature], axis=1)[all_feature_name_list].values.T)
 
-    # B = 20, C = 18, T = 1
+    # Universe X Feature X T(1)
     last_inst_feature = np.array(last_inst_feature)
     # 第一个 feature 必须是 ret1m！
     last_inst_ret1m = last_inst_feature[:, 0:1, :]
@@ -326,7 +326,7 @@ def v0_min_infer(task_tm_s, cfg, univ, model_name, model_id, sdk: SDKWrapper, in
 
     last_valid = np.array([sdk.deploy_read_last_alpha(task_tm_s, inst, "ret1m").notna().values[0] for inst in univ])
     
-    LOGGER.info("read last done")
+    LOGGER.info("read lastest data done")
 
     last_encode_pred, last_encode_prob = gen_minute_encode_pred(model, norm_last_inst_feature)
     last_preds = []
